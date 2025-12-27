@@ -1,5 +1,13 @@
 import './ImageDisplay.css'
 
+// Generate a filename with date and short UUID
+function generateFilename() {
+  const date = new Date()
+  const dateStr = date.toISOString().split('T')[0] // YYYY-MM-DD format
+  const shortUuid = crypto.randomUUID().replace(/-/g, '').substring(0, 8) // 8 character UUID
+  return `${dateStr}-${shortUuid}.png`
+}
+
 function ImageDisplay({ generatedImage, loading, prompt, onSave }) {
   if (loading) {
     return (
@@ -48,7 +56,7 @@ function ImageDisplay({ generatedImage, loading, prompt, onSave }) {
           )}
           <a
             href={typeof generatedImage === 'string' ? generatedImage : generatedImage.url}
-            download="generated-image.png"
+            download={generateFilename()}
             className="download-button"
           >
             Download
