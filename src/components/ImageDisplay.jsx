@@ -1,6 +1,6 @@
 import './ImageDisplay.css'
 
-function ImageDisplay({ generatedImage, loading }) {
+function ImageDisplay({ generatedImage, loading, prompt, onSave }) {
   if (loading) {
     return (
       <div className="image-display-container">
@@ -38,6 +38,14 @@ function ImageDisplay({ generatedImage, loading }) {
           </div>
         )}
         <div className="image-actions">
+          {onSave && (
+            <button
+              onClick={() => onSave(generatedImage, prompt)}
+              className="save-button"
+            >
+              Save to Gallery
+            </button>
+          )}
           <a
             href={typeof generatedImage === 'string' ? generatedImage : generatedImage.url}
             download="generated-image.png"

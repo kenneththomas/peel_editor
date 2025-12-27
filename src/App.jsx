@@ -3,7 +3,9 @@ import ImageUpload from './components/ImageUpload'
 import JSONEditor from './components/JSONEditor'
 import ImageDisplay from './components/ImageDisplay'
 import SettingsPanel from './components/SettingsPanel'
+import Gallery from './components/Gallery'
 import { generateImage } from './services/api'
+import { saveImage, getImageCount } from './services/gallery'
 import './App.css'
 
 const DEFAULT_SETTINGS = {
@@ -11,6 +13,7 @@ const DEFAULT_SETTINGS = {
 }
 
 function App() {
+  const [currentView, setCurrentView] = useState('generator') // 'generator' or 'gallery'
   const [uploadedImage, setUploadedImage] = useState(null)
   const [prompt, setPrompt] = useState('')
   const [generatedImage, setGeneratedImage] = useState(null)
@@ -22,11 +25,17 @@ function App() {
     const saved = localStorage.getItem('settings')
     return saved ? { ...DEFAULT_SETTINGS, ...JSON.parse(saved) } : DEFAULT_SETTINGS
   })
+  const [galleryCount, setGalleryCount] = useState(0)
 
   // Save settings to localStorage when they change
   useEffect(() => {
     localStorage.setItem('settings', JSON.stringify(settings))
   }, [settings])
+
+  // Update gallery count when view changes
+  useEffect(() => {
+    setGalleryCount(getImageCount())
+  }, [currentView])
 
   const handleImageUpload = (file) => {
     const reader = new FileReader()
@@ -85,6 +94,33 @@ function App() {
     localStorage.setItem('apiUrl', url)
   }
 
+  const handleSaveImage = (imageData, imagePrompt) => {
+    try {
+      saveImage(imageData, { prompt: imagePrompt })
+      setGalleryCount(getImageCount())
+      alert('Image saved to gallery!')
+    } catch (error) {
+      alert('Failed to save image: ' + error.message)
+    }
+  }
+
+  const handleGalleryImageSelect = (image) => {
+    // This is called when clicking an image - modal is handled by Gallery component
+  }
+
+  const handleImportImage = (image) => {
+    // Import image and prompt into generator
+    if (image.prompt) {
+      setPrompt(image.prompt)
+    }
+    
+    // Set the generated image so user can see it
+    setGeneratedImage({ url: image.imageUrl })
+    
+    // Switch to generator view
+    setCurrentView('generator')
+  }
+
   return (
     <div className="app">
       <header className="app-header">
@@ -93,6 +129,21 @@ function App() {
       </header>
 
       <div className="app-container">
+        <div className="navigation-tabs">
+          <button
+            className={`nav-tab ${currentView === 'generator' ? 'active' : ''}`}
+            onClick={() => setCurrentView('generator')}
+          >
+            Generator
+          </button>
+          <button
+            className={`nav-tab ${currentView === 'gallery' ? 'active' : ''}`}
+            onClick={() => setCurrentView('gallery')}
+          >
+            Gallery {galleryCount > 0 && `(${galleryCount})`}
+          </button>
+        </div>
+
         <div className="api-key-section">
           <div className="api-key-row">
             <label htmlFor="api-key">API Key:</label>
@@ -118,50 +169,62 @@ function App() {
           </div>
         </div>
 
-        <div className="main-content">
-          <div className="left-panel">
-            <ImageUpload
-              onImageUpload={handleImageUpload}
-              uploadedImage={uploadedImage}
-              onClear={() => setUploadedImage(null)}
-            />
-            
-            <JSONEditor
-              value={prompt}
-              onChange={setPrompt}
-            />
-          </div>
-
-          <div className="middle-panel">
-            <SettingsPanel
-              settings={settings}
-              onChange={setSettings}
-            />
-          </div>
-
-          <div className="right-panel">
-            <div className="generate-section">
-              <button
-                onClick={handleGenerate}
-                disabled={loading || !prompt.trim()}
-                className="generate-button"
-              >
-                {loading ? 'Generating...' : 'Generate Image'}
-              </button>
+        {currentView === 'generator' ? (
+          <div className="main-content">
+            <div className="left-panel">
+              <ImageUpload
+                onImageUpload={handleImageUpload}
+                uploadedImage={uploadedImage}
+                onClear={() => setUploadedImage(null)}
+              />
+              
+              <JSONEditor
+                value={prompt}
+                onChange={setPrompt}
+              />
             </div>
 
-            {error && (
-              <div className="error-message">
-                {error}
-              </div>
-            )}
+            <div className="middle-panel">
+              <SettingsPanel
+                settings={settings}
+                onChange={setSettings}
+              />
+            </div>
 
-            <ImageDisplay
-              generatedImage={generatedImage}
-              loading={loading}
+            <div className="right-panel">
+              <div className="generate-section">
+                <button
+                  onClick={handleGenerate}
+                  disabled={loading || !prompt.trim()}
+                  className="generate-button"
+                >
+                  {loading ? 'Generating...' : 'Generate Image'}
+                </button>
+              </div>
+
+              {error && (
+                <div className="error-message">
+                  {error}
+                </div>
+              )}
+
+              <ImageDisplay
+                generatedImage={generatedImage}
+                loading={loading}
+                prompt={prompt}
+                onSave={handleSaveImage}
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="gallery-view">
+            <Gallery 
+              onImageSelect={handleGalleryImageSelect}
+              onImport={handleImportImage}
+              refreshTrigger={galleryCount}
             />
           </div>
-        </div>
+        )}
       </div>
     </div>
   )
