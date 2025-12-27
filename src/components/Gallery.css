@@ -259,12 +259,15 @@
   align-items: center;
   justify-content: center;
   min-height: 300px;
+  flex-shrink: 0;
 }
 
 .gallery-modal-image img {
   max-width: 100%;
-  max-height: 500px;
+  width: auto;
+  height: auto;
   object-fit: contain;
+  display: block;
 }
 
 .gallery-modal-prompt {
@@ -354,7 +357,8 @@
   }
   
   .gallery-modal-image img {
-    max-height: 300px;
+    width: auto;
+    height: auto;
   }
   
   .gallery-modal-actions {
