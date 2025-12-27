@@ -15,6 +15,12 @@
   margin-bottom: 15px;
 }
 
+.header-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
 .json-editor-header h2 {
   color: #333;
   font-size: 1.5rem;
@@ -88,5 +94,148 @@
 
 .prompt-hint p:last-child {
   margin-bottom: 0;
+}
+
+.view-toggle {
+  display: flex;
+  gap: 4px;
+  background: #f0f0f0;
+  border-radius: 6px;
+  padding: 2px;
+}
+
+.toggle-button {
+  padding: 6px 12px;
+  background: transparent;
+  color: #666;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.toggle-button:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.toggle-button.active {
+  background: white;
+  color: #667eea;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.json-form-wrapper {
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 20px;
+  background: #fafafa;
+  max-height: 400px;
+  overflow-y: auto;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 14px;
+}
+
+.json-object {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.json-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.json-key {
+  font-weight: 600;
+  color: #667eea;
+  font-size: 14px;
+}
+
+.json-value-wrapper {
+  margin-left: 16px;
+}
+
+.json-nested-object {
+  border-left: 2px solid #e0e0e0;
+  padding-left: 16px;
+  margin-top: 8px;
+}
+
+.json-value-clickable {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: #333;
+  min-width: 100px;
+}
+
+.json-value-clickable:hover {
+  border-color: #667eea;
+  background: #f8f9ff;
+  box-shadow: 0 1px 3px rgba(102, 126, 234, 0.2);
+}
+
+.edit-icon {
+  font-size: 12px;
+  opacity: 0.5;
+  transition: opacity 0.2s;
+}
+
+.json-value-clickable:hover .edit-icon {
+  opacity: 1;
+}
+
+.json-value-input {
+  padding: 4px 8px;
+  border: 2px solid #667eea;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 14px;
+  color: #333;
+  background: white;
+  outline: none;
+  min-width: 200px;
+  width: 100%;
+  max-width: 500px;
+}
+
+.json-value-null {
+  color: #999;
+  font-style: italic;
+}
+
+.json-array {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-left: 16px;
+}
+
+.json-array-item {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.json-array-index {
+  color: #999;
+  font-size: 12px;
+  font-weight: 600;
+  min-width: 40px;
+  padding-top: 4px;
+}
+
+.json-array-content {
+  flex: 1;
 }
 
