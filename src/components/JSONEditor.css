@@ -239,3 +239,191 @@
   flex: 1;
 }
 
+/* Prompt saving styles */
+.prompt-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.save-prompt-button,
+.load-prompt-button {
+  padding: 8px 16px;
+  background: #48bb78;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  transition: background 0.2s;
+}
+
+.save-prompt-button:hover,
+.load-prompt-button:hover {
+  background: #38a169;
+}
+
+.load-prompt-wrapper {
+  position: relative;
+}
+
+.prompts-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 8px;
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  min-width: 300px;
+  max-width: 400px;
+  max-height: 400px;
+  overflow-y: auto;
+  z-index: 1000;
+}
+
+.prompt-dropdown-empty {
+  padding: 20px;
+  text-align: center;
+  color: #999;
+  font-size: 14px;
+}
+
+.prompt-dropdown-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid #f0f0f0;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.prompt-dropdown-item:last-child {
+  border-bottom: none;
+}
+
+.prompt-dropdown-item:hover {
+  background: #f8f9ff;
+}
+
+.prompt-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.prompt-item-name {
+  font-weight: 600;
+  color: #333;
+  font-size: 14px;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.prompt-item-date {
+  font-size: 12px;
+  color: #999;
+}
+
+.prompt-delete-button {
+  margin-left: 12px;
+  padding: 4px 8px;
+  background: transparent;
+  border: none;
+  color: #e53e3e;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+
+.prompt-delete-button:hover {
+  background: #fee;
+}
+
+/* Modal styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.modal-content {
+  background: white;
+  padding: 24px;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  min-width: 400px;
+  max-width: 90vw;
+}
+
+.modal-content h3 {
+  margin: 0 0 16px 0;
+  color: #333;
+  font-size: 1.25rem;
+}
+
+.prompt-name-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 2px solid #e0e0e0;
+  border-radius: 6px;
+  font-size: 14px;
+  margin-bottom: 16px;
+  outline: none;
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+}
+
+.prompt-name-input:focus {
+  border-color: #667eea;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.modal-save-button,
+.modal-cancel-button {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.modal-save-button {
+  background: #48bb78;
+  color: white;
+}
+
+.modal-save-button:hover {
+  background: #38a169;
+}
+
+.modal-cancel-button {
+  background: #e0e0e0;
+  color: #333;
+}
+
+.modal-cancel-button:hover {
+  background: #d0d0d0;
+}
+

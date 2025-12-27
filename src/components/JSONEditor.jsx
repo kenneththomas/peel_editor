@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import Editor from '@monaco-editor/react'
+import { savePrompt, getSavedPrompts, deletePrompt } from '../services/prompts'
 import './JSONEditor.css'
 
 function JSONEditor({ value, onChange }) {
@@ -7,9 +8,13 @@ function JSONEditor({ value, onChange }) {
   const [jsonError, setJsonError] = useState(null)
   const [viewMode, setViewMode] = useState('editor') // 'editor' or 'form'
   const [parsedJSON, setParsedJSON] = useState(null)
+  const [showSaveModal, setShowSaveModal] = useState(false)
+  const [showLoadMenu, setShowLoadMenu] = useState(false)
+  const [savePromptName, setSavePromptName] = useState('')
+  const [savedPrompts, setSavedPrompts] = useState([])
 
   useEffect(() => {
-    if (!value.trim()) {
+    if (!value || !value.trim()) {
       setIsValidJSON(true)
       setJsonError(null)
       setParsedJSON(null)
@@ -28,6 +33,29 @@ function JSONEditor({ value, onChange }) {
     }
   }, [value])
 
+  // Load saved prompts when component mounts or when menu is shown
+  useEffect(() => {
+    if (showLoadMenu) {
+      setSavedPrompts(getSavedPrompts())
+    }
+  }, [showLoadMenu])
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showLoadMenu && !event.target.closest('.load-prompt-wrapper')) {
+        setShowLoadMenu(false)
+      }
+    }
+
+    if (showLoadMenu) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside)
+      }
+    }
+  }, [showLoadMenu])
+
   const handleEditorChange = (newValue) => {
     onChange(newValue || '')
   }
@@ -38,6 +66,43 @@ function JSONEditor({ value, onChange }) {
       onChange(JSON.stringify(parsed, null, 2))
     } catch (e) {
       // Can't format invalid JSON
+    }
+  }
+
+  const handleSavePrompt = () => {
+    if (!value || !value.trim()) {
+      alert('Please enter a prompt before saving')
+      return
+    }
+    setShowSaveModal(true)
+    setSavePromptName('')
+  }
+
+  const handleConfirmSave = () => {
+    try {
+      savePrompt(value, savePromptName || null)
+      setShowSaveModal(false)
+      setSavePromptName('')
+      alert('Prompt saved successfully!')
+    } catch (error) {
+      alert('Failed to save prompt: ' + error.message)
+    }
+  }
+
+  const handleLoadPrompt = (promptText) => {
+    onChange(promptText)
+    setShowLoadMenu(false)
+  }
+
+  const handleDeletePrompt = (promptId, e) => {
+    e.stopPropagation()
+    if (confirm('Are you sure you want to delete this prompt?')) {
+      try {
+        deletePrompt(promptId)
+        setSavedPrompts(getSavedPrompts())
+      } catch (error) {
+        alert('Failed to delete prompt: ' + error.message)
+      }
     }
   }
 
@@ -162,7 +227,7 @@ function JSONEditor({ value, onChange }) {
     return <span>{String(obj)}</span>
   }
 
-  const isJSONLike = value.trim().startsWith('{') || value.trim().startsWith('[')
+  const isJSONLike = value && (value.trim().startsWith('{') || value.trim().startsWith('['))
   const canShowForm = isValidJSON && isJSONLike && parsedJSON && typeof parsedJSON === 'object'
 
   return (
@@ -186,6 +251,48 @@ function JSONEditor({ value, onChange }) {
               </button>
             </div>
           )}
+          <div className="prompt-actions">
+            <button onClick={handleSavePrompt} className="save-prompt-button">
+              💾 Save Prompt
+            </button>
+            <div className="load-prompt-wrapper">
+              <button 
+                onClick={() => setShowLoadMenu(!showLoadMenu)} 
+                className="load-prompt-button"
+              >
+                📂 Load Prompt
+              </button>
+              {showLoadMenu && (
+                <div className="prompts-dropdown">
+                  {savedPrompts.length === 0 ? (
+                    <div className="prompt-dropdown-empty">No saved prompts</div>
+                  ) : (
+                    savedPrompts.map((prompt) => (
+                      <div
+                        key={prompt.id}
+                        className="prompt-dropdown-item"
+                        onClick={() => handleLoadPrompt(prompt.text)}
+                      >
+                        <div className="prompt-item-info">
+                          <div className="prompt-item-name">{prompt.name}</div>
+                          <div className="prompt-item-date">
+                            {new Date(prompt.timestamp).toLocaleDateString()}
+                          </div>
+                        </div>
+                        <button
+                          className="prompt-delete-button"
+                          onClick={(e) => handleDeletePrompt(prompt.id, e)}
+                          title="Delete prompt"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
           {isJSONLike && (
             <button onClick={formatJSON} className="format-button">
               Format JSON
@@ -250,6 +357,38 @@ function JSONEditor({ value, onChange }) {
         <p>Enter your prompt here. If it starts with <code>{'{'}</code> or <code>[</code>, it will be treated as JSON and highlighted.</p>
         <p>You can also use plain text prompts for simple generation.</p>
       </div>
+
+      {/* Save Prompt Modal */}
+      {showSaveModal && (
+        <div className="modal-overlay" onClick={() => setShowSaveModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h3>Save Prompt</h3>
+            <input
+              type="text"
+              className="prompt-name-input"
+              value={savePromptName}
+              onChange={(e) => setSavePromptName(e.target.value)}
+              placeholder="Enter a name for this prompt (optional)"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleConfirmSave()
+                } else if (e.key === 'Escape') {
+                  setShowSaveModal(false)
+                }
+              }}
+              autoFocus
+            />
+            <div className="modal-actions">
+              <button onClick={handleConfirmSave} className="modal-save-button">
+                Save
+              </button>
+              <button onClick={() => setShowSaveModal(false)} className="modal-cancel-button">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
