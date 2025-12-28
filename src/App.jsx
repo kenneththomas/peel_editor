@@ -34,7 +34,11 @@ function App() {
 
   // Update gallery count when view changes
   useEffect(() => {
-    setGalleryCount(getImageCount())
+    const updateCount = async () => {
+      const count = await getImageCount()
+      setGalleryCount(count)
+    }
+    updateCount()
   }, [currentView])
 
   const handleImageUpload = (file, index) => {
@@ -113,12 +117,14 @@ function App() {
     localStorage.setItem('apiUrl', url)
   }
 
-  const handleSaveImage = (imageData, imagePrompt) => {
+  const handleSaveImage = async (imageData, imagePrompt) => {
     try {
-      saveImage(imageData, { prompt: imagePrompt })
-      setGalleryCount(getImageCount())
+      await saveImage(imageData, { prompt: imagePrompt })
+      const count = await getImageCount()
+      setGalleryCount(count)
       alert('Image saved to gallery!')
     } catch (error) {
+      console.error('Error saving image:', error)
       alert('Failed to save image: ' + error.message)
     }
   }

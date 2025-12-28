@@ -5,6 +5,7 @@ import './Gallery.css'
 function Gallery({ onImageSelect, refreshTrigger, onImport }) {
   const [images, setImages] = useState([])
   const [selectedImage, setSelectedImage] = useState(null)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     loadImages()
@@ -21,33 +22,43 @@ function Gallery({ onImageSelect, refreshTrigger, onImport }) {
     return () => window.removeEventListener('keydown', handleEscape)
   }, [selectedImage])
 
-  const loadImages = () => {
-    const savedImages = getSavedImages()
-    setImages(savedImages)
+  const loadImages = async () => {
+    setLoading(true)
+    try {
+      const savedImages = await getSavedImages()
+      setImages(savedImages)
+    } catch (error) {
+      console.error('Error loading images:', error)
+      setImages([])
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const handleDelete = (imageId, e) => {
+  const handleDelete = async (imageId, e) => {
     e.stopPropagation()
     if (window.confirm('Are you sure you want to delete this image?')) {
       try {
-        deleteImage(imageId)
-        loadImages()
+        await deleteImage(imageId)
+        await loadImages()
         if (selectedImage?.id === imageId) {
           setSelectedImage(null)
         }
       } catch (error) {
+        console.error('Error deleting image:', error)
         alert('Failed to delete image')
       }
     }
   }
 
-  const handleClearAll = () => {
+  const handleClearAll = async () => {
     if (window.confirm('Are you sure you want to clear all images? This cannot be undone.')) {
       try {
-        clearGallery()
-        loadImages()
+        await clearGallery()
+        await loadImages()
         setSelectedImage(null)
       } catch (error) {
+        console.error('Error clearing gallery:', error)
         alert('Failed to clear gallery')
       }
     }
@@ -74,6 +85,19 @@ function Gallery({ onImageSelect, refreshTrigger, onImport }) {
   const formatDate = (timestamp) => {
     const date = new Date(timestamp)
     return date.toLocaleString()
+  }
+
+  if (loading) {
+    return (
+      <div className="gallery-container">
+        <div className="gallery-header">
+          <h2>Gallery</h2>
+        </div>
+        <div className="gallery-empty">
+          <p>Loading gallery...</p>
+        </div>
+      </div>
+    )
   }
 
   if (images.length === 0) {
