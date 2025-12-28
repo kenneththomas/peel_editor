@@ -167,7 +167,7 @@ function Gallery({ onImageSelect, refreshTrigger, onImport }) {
                   onClick={handleImport}
                   className="import-button"
                 >
-                  Import to Generator
+                  Import to Input Images
                 </button>
               )}
               <a

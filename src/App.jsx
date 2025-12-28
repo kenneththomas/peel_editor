@@ -127,17 +127,24 @@ function App() {
     // This is called when clicking an image - modal is handled by Gallery component
   }
 
-  const handleImportImage = (image) => {
-    // Import image and prompt into generator
-    if (image.prompt) {
-      setPrompt(image.prompt)
+  const handleImportImage = async (image) => {
+    // Import image to input images
+    try {
+      // Convert image URL to File object
+      const response = await fetch(image.imageUrl)
+      const blob = await response.blob()
+      const file = new File([blob], `gallery-image-${image.id}.png`, { type: blob.type || 'image/png' })
+      
+      // Find the first available slot for the image
+      const nextIndex = uploadedImages.length < 2 ? uploadedImages.length : 0
+      handleImageUpload(file, nextIndex)
+      
+      // Switch to generator view
+      setCurrentView('generator')
+    } catch (error) {
+      console.error('Error importing image:', error)
+      alert('Failed to import image: ' + error.message)
     }
-    
-    // Set the generated image so user can see it
-    setGeneratedImage({ url: image.imageUrl })
-    
-    // Switch to generator view
-    setCurrentView('generator')
   }
 
   return (
