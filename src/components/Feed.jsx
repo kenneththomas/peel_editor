@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { getAllPosts, createPost } from '../services/feed'
+import { getProfile } from '../services/profile'
 import PostDetailModal from './PostDetailModal'
 import './Feed.css'
 
@@ -13,6 +14,7 @@ function Feed({ onUsernameClick, refreshTrigger }) {
   const [uploadCaption, setUploadCaption] = useState('')
   const [uploading, setUploading] = useState(false)
   const [selectedPost, setSelectedPost] = useState(null)
+  const [profilePictures, setProfilePictures] = useState({})
   const fileInputRef = useRef(null)
 
   useEffect(() => {
@@ -24,6 +26,24 @@ function Feed({ onUsernameClick, refreshTrigger }) {
     try {
       const allPosts = await getAllPosts()
       setPosts(allPosts)
+      
+      // Fetch profile pictures for all unique usernames
+      const uniqueUsernames = [...new Set(allPosts.map(post => post.username))]
+      const profilePicsMap = {}
+      
+      await Promise.all(
+        uniqueUsernames.map(async (username) => {
+          try {
+            const profile = await getProfile(username)
+            profilePicsMap[username] = profile.profilePicture
+          } catch (error) {
+            console.error(`Error loading profile for ${username}:`, error)
+            profilePicsMap[username] = null
+          }
+        })
+      )
+      
+      setProfilePictures(profilePicsMap)
     } catch (error) {
       console.error('Error loading posts:', error)
       setPosts([])
@@ -261,12 +281,25 @@ function Feed({ onUsernameClick, refreshTrigger }) {
           {posts.map((post) => (
             <div key={post.id} className="feed-post">
               <div className="feed-post-header">
-                <button
-                  className="feed-post-username"
-                  onClick={() => handleUsernameClick(post.username)}
-                >
-                  {post.username}
-                </button>
+                <div className="feed-post-user-info">
+                  {profilePictures[post.username] ? (
+                    <img
+                      src={profilePictures[post.username]}
+                      alt={`${post.username}'s profile`}
+                      className="feed-post-profile-picture"
+                    />
+                  ) : (
+                    <div className="feed-post-profile-picture-placeholder">
+                      <span>{post.username.charAt(0).toUpperCase()}</span>
+                    </div>
+                  )}
+                  <button
+                    className="feed-post-username"
+                    onClick={() => handleUsernameClick(post.username)}
+                  >
+                    {post.username}
+                  </button>
+                </div>
                 <span className="feed-post-time">{formatDate(post.timestamp)}</span>
               </div>
               
@@ -295,13 +328,26 @@ function Feed({ onUsernameClick, refreshTrigger }) {
               )}
               
               <div className="feed-post-caption">
-                <button
-                  className="feed-post-username-inline"
-                  onClick={() => handleUsernameClick(post.username)}
-                >
-                  {post.username}
-                </button>
-                <span>{post.caption}</span>
+                <div className="feed-post-caption-user-info">
+                  {profilePictures[post.username] ? (
+                    <img
+                      src={profilePictures[post.username]}
+                      alt={`${post.username}'s profile`}
+                      className="feed-post-profile-picture-inline"
+                    />
+                  ) : (
+                    <div className="feed-post-profile-picture-placeholder-inline">
+                      <span>{post.username.charAt(0).toUpperCase()}</span>
+                    </div>
+                  )}
+                  <button
+                    className="feed-post-username-inline"
+                    onClick={() => handleUsernameClick(post.username)}
+                  >
+                    {post.username}
+                  </button>
+                </div>
+                {post.caption && <span>{post.caption}</span>}
               </div>
             </div>
           ))}

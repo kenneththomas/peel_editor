@@ -249,6 +249,36 @@
   border-bottom: 1px solid #efefef;
 }
 
+.feed-post-user-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.feed-post-profile-picture {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid #e0e0e0;
+  flex-shrink: 0;
+}
+
+.feed-post-profile-picture-placeholder {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #e0e0e0;
+  font-size: 14px;
+  font-weight: 600;
+  color: white;
+  flex-shrink: 0;
+}
+
 .feed-post-username {
   background: none;
   border: none;
@@ -341,6 +371,40 @@
   color: #262626;
   line-height: 1.5;
   word-wrap: break-word;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.feed-post-caption-user-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.feed-post-profile-picture-inline {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid #e0e0e0;
+  flex-shrink: 0;
+}
+
+.feed-post-profile-picture-placeholder-inline {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #e0e0e0;
+  font-size: 12px;
+  font-weight: 600;
+  color: white;
+  flex-shrink: 0;
 }
 
 .feed-post-username-inline {
