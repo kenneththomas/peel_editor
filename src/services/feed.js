@@ -4,7 +4,7 @@
  */
 
 const DB_NAME = 'peel_feed_db'
-const DB_VERSION = 1
+const DB_VERSION = 2
 const STORE_NAME = 'posts'
 
 let db = null
@@ -39,6 +39,28 @@ function initDB() {
         const objectStore = database.createObjectStore(STORE_NAME, { keyPath: 'id' })
         objectStore.createIndex('timestamp', 'timestamp', { unique: false })
         objectStore.createIndex('username', 'username', { unique: false })
+        objectStore.createIndex('taggedUsernames', 'taggedUsernames', { unique: false, multiEntry: true })
+      } else {
+        // Migration for existing databases
+        const transaction = event.target.transaction
+        const objectStore = transaction.objectStore(STORE_NAME)
+        
+        // Add taggedUsernames index if upgrading from version 1
+        if (event.oldVersion < 2 && !objectStore.indexNames.contains('taggedUsernames')) {
+          objectStore.createIndex('taggedUsernames', 'taggedUsernames', { unique: false, multiEntry: true })
+          
+          // Migrate existing posts to have taggedUsernames array
+          const getAllRequest = objectStore.getAll()
+          getAllRequest.onsuccess = () => {
+            const posts = getAllRequest.result
+            posts.forEach(post => {
+              if (!post.taggedUsernames) {
+                post.taggedUsernames = []
+                objectStore.put(post)
+              }
+            })
+          }
+        }
       }
     }
   })
@@ -46,6 +68,7 @@ function initDB() {
 
 /**
  * Get all posts from storage (sorted by timestamp descending)
+ * Deduplicates posts - each post appears only once even if multiple users are tagged
  */
 export async function getAllPosts() {
   try {
@@ -57,12 +80,22 @@ export async function getAllPosts() {
     
     const request = index.openCursor(null, 'prev') // Sort by timestamp descending
     const posts = []
+    const seenIds = new Set()
 
     return new Promise((resolve, reject) => {
       request.onsuccess = (event) => {
         const cursor = event.target.result
         if (cursor) {
-          posts.push(cursor.value)
+          const post = cursor.value
+          // Ensure taggedUsernames exists for backward compatibility
+          if (!post.taggedUsernames) {
+            post.taggedUsernames = []
+          }
+          // Only add if we haven't seen this post ID before
+          if (!seenIds.has(post.id)) {
+            posts.push(post)
+            seenIds.add(post.id)
+          }
           cursor.continue()
         } else {
           resolve(posts)
@@ -81,7 +114,7 @@ export async function getAllPosts() {
 }
 
 /**
- * Get posts by username
+ * Get posts by username (includes posts where user is author or tagged)
  */
 export async function getPostsByUsername(username) {
   try {
@@ -89,25 +122,64 @@ export async function getPostsByUsername(username) {
     
     const transaction = db.transaction([STORE_NAME], 'readonly')
     const store = transaction.objectStore(STORE_NAME)
-    const index = store.index('username')
     
-    const request = index.openCursor(IDBKeyRange.only(username), 'prev')
+    // Get posts where user is the author
+    const usernameIndex = store.index('username')
+    const usernameRequest = usernameIndex.openCursor(IDBKeyRange.only(username), 'prev')
     const posts = []
+    const postIds = new Set()
 
     return new Promise((resolve, reject) => {
-      request.onsuccess = (event) => {
+      // First, get posts where user is author
+      usernameRequest.onsuccess = (event) => {
         const cursor = event.target.result
         if (cursor) {
-          posts.push(cursor.value)
+          const post = cursor.value
+          // Ensure taggedUsernames exists for backward compatibility
+          if (!post.taggedUsernames) {
+            post.taggedUsernames = []
+          }
+          posts.push(post)
+          postIds.add(post.id)
           cursor.continue()
         } else {
-          resolve(posts)
+          // Then, get posts where user is tagged
+          const taggedIndex = store.index('taggedUsernames')
+          const taggedRequest = taggedIndex.openCursor(IDBKeyRange.only(username), 'prev')
+          
+          taggedRequest.onsuccess = (tagEvent) => {
+            const taggedCursor = tagEvent.target.result
+            if (taggedCursor) {
+              const post = taggedCursor.value
+              // Ensure taggedUsernames exists for backward compatibility
+              if (!post.taggedUsernames) {
+                post.taggedUsernames = []
+              }
+              // Only add if not already in the list (shouldn't happen, but just in case)
+              if (!postIds.has(post.id)) {
+                posts.push(post)
+                postIds.add(post.id)
+              }
+              taggedCursor.continue()
+            } else {
+              // Sort by timestamp descending
+              posts.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+              resolve(posts)
+            }
+          }
+          
+          taggedRequest.onerror = () => {
+            console.error('Error loading tagged posts:', taggedRequest.error)
+            // Resolve with what we have so far
+            posts.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+            resolve(posts)
+          }
         }
       }
 
-      request.onerror = () => {
-        console.error('Error loading posts by username:', request.error)
-        reject(request.error)
+      usernameRequest.onerror = () => {
+        console.error('Error loading posts by username:', usernameRequest.error)
+        reject(usernameRequest.error)
       }
     })
   } catch (error) {
@@ -118,10 +190,17 @@ export async function getPostsByUsername(username) {
 
 /**
  * Create a new post
+ * @param {string} imageUrl - URL of the post image
+ * @param {string} username - Author username
+ * @param {string} caption - Post caption
+ * @param {string[]} taggedUsernames - Array of usernames to tag (optional)
  */
-export async function createPost(imageUrl, username, caption) {
+export async function createPost(imageUrl, username, caption, taggedUsernames = []) {
   try {
     await initDB()
+    
+    // Filter out empty strings and ensure unique usernames
+    const cleanTaggedUsernames = [...new Set(taggedUsernames.filter(u => u && u.trim()))]
     
     const newPost = {
       id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
@@ -130,7 +209,8 @@ export async function createPost(imageUrl, username, caption) {
       caption: caption || '',
       timestamp: new Date().toISOString(),
       likes: [],
-      likesCount: 0
+      likesCount: 0,
+      taggedUsernames: cleanTaggedUsernames
     }
 
     const transaction = db.transaction([STORE_NAME], 'readwrite')
@@ -173,6 +253,11 @@ export async function updatePost(postId, updates) {
           return
         }
         
+        // Ensure taggedUsernames exists for backward compatibility
+        if (!post.taggedUsernames) {
+          post.taggedUsernames = []
+        }
+        
         // Update only the provided fields
         const updatedPost = {
           ...post,
@@ -182,6 +267,13 @@ export async function updatePost(postId, updates) {
         // Ensure likesCount is a number
         if (updates.likesCount !== undefined) {
           updatedPost.likesCount = parseInt(updates.likesCount) || 0
+        }
+        
+        // Ensure taggedUsernames is an array
+        if (updates.taggedUsernames !== undefined) {
+          updatedPost.taggedUsernames = [...new Set(updates.taggedUsernames.filter(u => u && u.trim()))]
+        } else if (!updatedPost.taggedUsernames) {
+          updatedPost.taggedUsernames = []
         }
         
         const updateRequest = store.put(updatedPost)

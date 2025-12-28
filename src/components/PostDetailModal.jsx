@@ -6,12 +6,14 @@ function PostDetailModal({ post, onClose, onUsernameClick, onUpdate }) {
   const [isEditing, setIsEditing] = useState(false)
   const [caption, setCaption] = useState('')
   const [likesCount, setLikesCount] = useState(0)
+  const [taggedUsernames, setTaggedUsernames] = useState('')
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     if (post) {
       setCaption(post.caption || '')
       setLikesCount(post.likesCount || 0)
+      setTaggedUsernames((post.taggedUsernames || []).join(', '))
       setIsEditing(false)
     }
   }, [post])
@@ -21,9 +23,15 @@ function PostDetailModal({ post, onClose, onUsernameClick, onUpdate }) {
 
     setLoading(true)
     try {
+      // Parse tagged usernames (comma-separated)
+      const tags = taggedUsernames.trim()
+        ? taggedUsernames.split(',').map(t => t.trim()).filter(t => t)
+        : []
+      
       await updatePost(post.id, {
         caption: caption.trim(),
-        likesCount: parseInt(likesCount) || 0
+        likesCount: parseInt(likesCount) || 0,
+        taggedUsernames: tags
       })
       
       if (onUpdate) {
@@ -42,8 +50,14 @@ function PostDetailModal({ post, onClose, onUsernameClick, onUpdate }) {
     if (post) {
       setCaption(post.caption || '')
       setLikesCount(post.likesCount || 0)
+      setTaggedUsernames((post.taggedUsernames || []).join(', '))
     }
     setIsEditing(false)
+  }
+
+  const getAllUsernames = () => {
+    if (!post) return []
+    return [post.username, ...(post.taggedUsernames || [])]
   }
 
   const handleClose = (e) => {
@@ -90,17 +104,24 @@ function PostDetailModal({ post, onClose, onUsernameClick, onUpdate }) {
           
           <div className="post-detail-modal-info">
             <div className="post-detail-modal-header-info">
-              <button
-                className="post-detail-modal-username"
-                onClick={() => {
-                  if (onUsernameClick) {
-                    onUsernameClick(post.username)
-                  }
-                  onClose()
-                }}
-              >
-                {post.username}
-              </button>
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '4px' }}>
+                {getAllUsernames().map((username, idx) => (
+                  <span key={username}>
+                    <button
+                      className="post-detail-modal-username"
+                      onClick={() => {
+                        if (onUsernameClick) {
+                          onUsernameClick(username)
+                        }
+                        onClose()
+                      }}
+                    >
+                      {username}
+                    </button>
+                    {idx < getAllUsernames().length - 1 && <span style={{ color: '#8e8e8e' }}> & </span>}
+                  </span>
+                ))}
+              </div>
               <span className="post-detail-modal-time">{formatDate(post.timestamp)}</span>
             </div>
 
@@ -110,17 +131,24 @@ function PostDetailModal({ post, onClose, onUsernameClick, onUpdate }) {
                   <strong>{post.likesCount || 0} {post.likesCount === 1 ? 'like' : 'likes'}</strong>
                 </div>
                 <div className="post-detail-modal-caption">
-                  <button
-                    className="post-detail-modal-username-inline"
-                    onClick={() => {
-                      if (onUsernameClick) {
-                        onUsernameClick(post.username)
-                      }
-                      onClose()
-                    }}
-                  >
-                    {post.username}
-                  </button>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
+                    {getAllUsernames().map((username, idx) => (
+                      <span key={username}>
+                        <button
+                          className="post-detail-modal-username-inline"
+                          onClick={() => {
+                            if (onUsernameClick) {
+                              onUsernameClick(username)
+                            }
+                            onClose()
+                          }}
+                        >
+                          {username}
+                        </button>
+                        {idx < getAllUsernames().length - 1 && <span style={{ color: '#262626' }}> & </span>}
+                      </span>
+                    ))}
+                  </div>
                   <span>{post.caption || ''}</span>
                 </div>
                 <div className="post-detail-modal-actions">
@@ -156,6 +184,21 @@ function PostDetailModal({ post, onClose, onUsernameClick, onUpdate }) {
                     onChange={(e) => setLikesCount(e.target.value)}
                     disabled={loading}
                   />
+                </div>
+                
+                <div className="post-detail-modal-field">
+                  <label htmlFor="edit-tagged">Tagged Profiles (comma-separated)</label>
+                  <input
+                    id="edit-tagged"
+                    type="text"
+                    value={taggedUsernames}
+                    onChange={(e) => setTaggedUsernames(e.target.value)}
+                    placeholder="username1, username2, username3"
+                    disabled={loading}
+                  />
+                  <small style={{ color: '#666', fontSize: '12px', marginTop: '4px', display: 'block' }}>
+                    Separate multiple usernames with commas. Tagged profiles will see this post on their profile.
+                  </small>
                 </div>
                 
                 <div className="post-detail-modal-edit-actions">

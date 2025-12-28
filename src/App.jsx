@@ -166,8 +166,8 @@ function App() {
     setSelectedImageForPost(image)
   }
 
-  const handleCreatePost = async (imageUrl, username, caption) => {
-    await createPost(imageUrl, username, caption)
+  const handleCreatePost = async (imageUrl, username, caption, taggedUsernames = []) => {
+    await createPost(imageUrl, username, caption, taggedUsernames)
     const count = await getPostCount()
     setPostCount(count)
     setSelectedImageForPost(null)

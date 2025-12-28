@@ -4,6 +4,7 @@ import './PostModal.css'
 function PostModal({ image, onClose, onCreatePost }) {
   const [username, setUsername] = useState('')
   const [caption, setCaption] = useState('')
+  const [taggedUsernames, setTaggedUsernames] = useState('')
   const [loading, setLoading] = useState(false)
 
   const handleSubmit = async (e) => {
@@ -21,7 +22,12 @@ function PostModal({ image, onClose, onCreatePost }) {
 
     setLoading(true)
     try {
-      await onCreatePost(image.imageUrl, username.trim(), caption.trim())
+      // Parse tagged usernames (comma-separated)
+      const tags = taggedUsernames.trim()
+        ? taggedUsernames.split(',').map(t => t.trim()).filter(t => t)
+        : []
+      
+      await onCreatePost(image.imageUrl, username.trim(), caption.trim(), tags)
       onClose()
     } catch (error) {
       console.error('Error creating post:', error)
@@ -82,6 +88,21 @@ function PostModal({ image, onClose, onCreatePost }) {
                 rows="4"
                 disabled={loading}
               />
+            </div>
+            
+            <div className="post-modal-field">
+              <label htmlFor="taggedUsernames">Tag Profiles (comma-separated)</label>
+              <input
+                id="taggedUsernames"
+                type="text"
+                value={taggedUsernames}
+                onChange={(e) => setTaggedUsernames(e.target.value)}
+                placeholder="username1, username2, username3"
+                disabled={loading}
+              />
+              <small style={{ color: '#666', fontSize: '12px', marginTop: '4px', display: 'block' }}>
+                Separate multiple usernames with commas. Tagged profiles will see this post on their profile.
+              </small>
             </div>
           </div>
           

@@ -12,6 +12,7 @@ function Feed({ onUsernameClick, refreshTrigger }) {
   const [uploadImagePreview, setUploadImagePreview] = useState(null)
   const [uploadUsername, setUploadUsername] = useState('')
   const [uploadCaption, setUploadCaption] = useState('')
+  const [uploadTaggedUsernames, setUploadTaggedUsernames] = useState('')
   const [uploading, setUploading] = useState(false)
   const [selectedPost, setSelectedPost] = useState(null)
   const [profilePictures, setProfilePictures] = useState({})
@@ -27,12 +28,19 @@ function Feed({ onUsernameClick, refreshTrigger }) {
       const allPosts = await getAllPosts()
       setPosts(allPosts)
       
-      // Fetch profile pictures for all unique usernames
-      const uniqueUsernames = [...new Set(allPosts.map(post => post.username))]
+      // Fetch profile pictures for all unique usernames (including tagged users)
+      const uniqueUsernames = new Set()
+      allPosts.forEach(post => {
+        uniqueUsernames.add(post.username)
+        if (post.taggedUsernames) {
+          post.taggedUsernames.forEach(username => uniqueUsernames.add(username))
+        }
+      })
+      
       const profilePicsMap = {}
       
       await Promise.all(
-        uniqueUsernames.map(async (username) => {
+        Array.from(uniqueUsernames).map(async (username) => {
           try {
             const profile = await getProfile(username)
             profilePicsMap[username] = profile.profilePicture
@@ -88,6 +96,7 @@ function Feed({ onUsernameClick, refreshTrigger }) {
     setUploadImagePreview(null)
     setUploadUsername('')
     setUploadCaption('')
+    setUploadTaggedUsernames('')
     setShowUpload(false)
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
@@ -111,7 +120,13 @@ function Feed({ onUsernameClick, refreshTrigger }) {
     try {
       // Convert image to data URL for storage
       const imageUrl = uploadImagePreview
-      await createPost(imageUrl, uploadUsername.trim(), uploadCaption.trim())
+      
+      // Parse tagged usernames (comma-separated)
+      const tags = uploadTaggedUsernames.trim()
+        ? uploadTaggedUsernames.split(',').map(t => t.trim()).filter(t => t)
+        : []
+      
+      await createPost(imageUrl, uploadUsername.trim(), uploadCaption.trim(), tags)
       
       // Reset form and reload posts
       handleClearUpload()
@@ -160,6 +175,15 @@ function Feed({ onUsernameClick, refreshTrigger }) {
     if (diffHours < 24) return `${diffHours}h ago`
     if (diffDays < 7) return `${diffDays}d ago`
     return date.toLocaleDateString()
+  }
+
+  const formatUsernames = (post) => {
+    const allUsernames = [post.username, ...(post.taggedUsernames || [])]
+    return allUsernames.join(' & ')
+  }
+
+  const getAllUsernames = (post) => {
+    return [post.username, ...(post.taggedUsernames || [])]
   }
 
   if (loading) {
@@ -248,6 +272,21 @@ function Feed({ onUsernameClick, refreshTrigger }) {
                   disabled={uploading}
                 />
               </div>
+              
+              <div className="feed-upload-field">
+                <label htmlFor="feed-tagged">Tag Profiles (comma-separated)</label>
+                <input
+                  id="feed-tagged"
+                  type="text"
+                  value={uploadTaggedUsernames}
+                  onChange={(e) => setUploadTaggedUsernames(e.target.value)}
+                  placeholder="username1, username2, username3"
+                  disabled={uploading}
+                />
+                <small style={{ color: '#666', fontSize: '12px', marginTop: '4px', display: 'block' }}>
+                  Separate multiple usernames with commas. Tagged profiles will see this post on their profile.
+                </small>
+              </div>
             </div>
             
             <div className="feed-upload-actions">
@@ -278,7 +317,11 @@ function Feed({ onUsernameClick, refreshTrigger }) {
         </div>
       ) : (
         <div className="feed-content">
-          {posts.map((post) => (
+          {posts.map((post) => {
+            const allUsernames = getAllUsernames(post)
+            const displayUsernames = formatUsernames(post)
+            
+            return (
             <div key={post.id} className="feed-post">
               <div className="feed-post-header">
                 <div className="feed-post-user-info">
@@ -293,12 +336,19 @@ function Feed({ onUsernameClick, refreshTrigger }) {
                       <span>{post.username.charAt(0).toUpperCase()}</span>
                     </div>
                   )}
-                  <button
-                    className="feed-post-username"
-                    onClick={() => handleUsernameClick(post.username)}
-                  >
-                    {post.username}
-                  </button>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '4px' }}>
+                    {allUsernames.map((username, idx) => (
+                      <span key={username}>
+                        <button
+                          className="feed-post-username"
+                          onClick={() => handleUsernameClick(username)}
+                        >
+                          {username}
+                        </button>
+                        {idx < allUsernames.length - 1 && <span style={{ color: '#8e8e8e' }}> & </span>}
+                      </span>
+                    ))}
+                  </div>
                 </div>
                 <span className="feed-post-time">{formatDate(post.timestamp)}</span>
               </div>
@@ -340,17 +390,24 @@ function Feed({ onUsernameClick, refreshTrigger }) {
                       <span>{post.username.charAt(0).toUpperCase()}</span>
                     </div>
                   )}
-                  <button
-                    className="feed-post-username-inline"
-                    onClick={() => handleUsernameClick(post.username)}
-                  >
-                    {post.username}
-                  </button>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '4px' }}>
+                    {allUsernames.map((username, idx) => (
+                      <span key={username}>
+                        <button
+                          className="feed-post-username-inline"
+                          onClick={() => handleUsernameClick(username)}
+                        >
+                          {username}
+                        </button>
+                        {idx < allUsernames.length - 1 && <span style={{ color: '#262626' }}> & </span>}
+                      </span>
+                    ))}
+                  </div>
                 </div>
                 {post.caption && <span>{post.caption}</span>}
               </div>
             </div>
-          ))}
+          )})}
         </div>
       )}
 
