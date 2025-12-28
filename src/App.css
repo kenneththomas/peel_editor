@@ -58,7 +58,9 @@
   color: white;
 }
 
-.gallery-view {
+.gallery-view,
+.feed-view,
+.profile-view {
   display: flex;
   flex-direction: column;
   gap: 20px;

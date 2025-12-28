@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { getSavedImages, deleteImage, clearGallery } from '../services/gallery'
 import './Gallery.css'
 
-function Gallery({ onImageSelect, refreshTrigger, onImport }) {
+function Gallery({ onImageSelect, refreshTrigger, onImport, onNewPost }) {
   const [images, setImages] = useState([])
   const [selectedImage, setSelectedImage] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -186,6 +186,17 @@ function Gallery({ onImageSelect, refreshTrigger, onImport }) {
               </div>
             </div>
             <div className="gallery-modal-actions">
+              {onNewPost && (
+                <button
+                  onClick={() => {
+                    onNewPost(selectedImage)
+                    setSelectedImage(null)
+                  }}
+                  className="new-post-button"
+                >
+                  New Post
+                </button>
+              )}
               {onImport && (
                 <button
                   onClick={handleImport}

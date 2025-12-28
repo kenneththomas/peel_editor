@@ -4,8 +4,12 @@ import JSONEditor from './components/JSONEditor'
 import ImageDisplay from './components/ImageDisplay'
 import SettingsPanel from './components/SettingsPanel'
 import Gallery from './components/Gallery'
+import Feed from './components/Feed'
+import Profile from './components/Profile'
+import PostModal from './components/PostModal'
 import { generateImage } from './services/api'
 import { saveImage, getImageCount } from './services/gallery'
+import { createPost, getPostCount } from './services/feed'
 import './App.css'
 
 const DEFAULT_SETTINGS = {
@@ -13,7 +17,8 @@ const DEFAULT_SETTINGS = {
 }
 
 function App() {
-  const [currentView, setCurrentView] = useState('generator') // 'generator' or 'gallery'
+  const [currentView, setCurrentView] = useState('generator') // 'generator', 'gallery', 'feed', or 'profile'
+  const [profileUsername, setProfileUsername] = useState(null)
   const [uploadedImages, setUploadedImages] = useState([])
   const [prompt, setPrompt] = useState('')
   const [generatedImage, setGeneratedImage] = useState(null)
@@ -26,19 +31,23 @@ function App() {
     return saved ? { ...DEFAULT_SETTINGS, ...JSON.parse(saved) } : DEFAULT_SETTINGS
   })
   const [galleryCount, setGalleryCount] = useState(0)
+  const [postCount, setPostCount] = useState(0)
+  const [selectedImageForPost, setSelectedImageForPost] = useState(null)
 
   // Save settings to localStorage when they change
   useEffect(() => {
     localStorage.setItem('settings', JSON.stringify(settings))
   }, [settings])
 
-  // Update gallery count when view changes
+  // Update gallery and post counts when view changes
   useEffect(() => {
-    const updateCount = async () => {
-      const count = await getImageCount()
-      setGalleryCount(count)
+    const updateCounts = async () => {
+      const gallery = await getImageCount()
+      const posts = await getPostCount()
+      setGalleryCount(gallery)
+      setPostCount(posts)
     }
-    updateCount()
+    updateCounts()
   }, [currentView])
 
   const handleImageUpload = (file, index) => {
@@ -153,6 +162,30 @@ function App() {
     }
   }
 
+  const handleNewPost = (image) => {
+    setSelectedImageForPost(image)
+  }
+
+  const handleCreatePost = async (imageUrl, username, caption) => {
+    await createPost(imageUrl, username, caption)
+    const count = await getPostCount()
+    setPostCount(count)
+    setSelectedImageForPost(null)
+    if (currentView !== 'feed') {
+      setCurrentView('feed')
+    }
+  }
+
+  const handleUsernameClick = (username) => {
+    setProfileUsername(username)
+    setCurrentView('profile')
+  }
+
+  const handleBackFromProfile = () => {
+    setProfileUsername(null)
+    setCurrentView('feed')
+  }
+
   return (
     <div className="app">
       <header className="app-header">
@@ -164,15 +197,30 @@ function App() {
         <div className="navigation-tabs">
           <button
             className={`nav-tab ${currentView === 'generator' ? 'active' : ''}`}
-            onClick={() => setCurrentView('generator')}
+            onClick={() => {
+              setCurrentView('generator')
+              setProfileUsername(null)
+            }}
           >
             Generator
           </button>
           <button
             className={`nav-tab ${currentView === 'gallery' ? 'active' : ''}`}
-            onClick={() => setCurrentView('gallery')}
+            onClick={() => {
+              setCurrentView('gallery')
+              setProfileUsername(null)
+            }}
           >
             Gallery {galleryCount > 0 && `(${galleryCount})`}
+          </button>
+          <button
+            className={`nav-tab ${currentView === 'feed' ? 'active' : ''}`}
+            onClick={() => {
+              setCurrentView('feed')
+              setProfileUsername(null)
+            }}
+          >
+            Feed {postCount > 0 && `(${postCount})`}
           </button>
         </div>
 
@@ -248,14 +296,34 @@ function App() {
               />
             </div>
           </div>
-        ) : (
+        ) : currentView === 'gallery' ? (
           <div className="gallery-view">
             <Gallery 
               onImageSelect={handleGalleryImageSelect}
               onImport={handleImportImage}
+              onNewPost={handleNewPost}
               refreshTrigger={galleryCount}
             />
           </div>
+        ) : currentView === 'feed' ? (
+          <div className="feed-view">
+            <Feed onUsernameClick={handleUsernameClick} refreshTrigger={postCount} />
+          </div>
+        ) : currentView === 'profile' ? (
+          <div className="profile-view">
+            <Profile 
+              username={profileUsername}
+              onBack={handleBackFromProfile}
+            />
+          </div>
+        ) : null}
+
+        {selectedImageForPost && (
+          <PostModal
+            image={selectedImageForPost}
+            onClose={() => setSelectedImageForPost(null)}
+            onCreatePost={handleCreatePost}
+          />
         )}
       </div>
     </div>
