@@ -16,7 +16,7 @@ async function imageToBase64(file) {
   })
 }
 
-export async function generateImage(apiKey, prompt, inputImage = null, settings = {}, customApiUrl = null) {
+export async function generateImage(apiKey, prompt, inputImages = null, settings = {}, customApiUrl = null) {
   // API endpoint - Google Nano Banana Pro API endpoint
   // Based on documentation: https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image-preview:generateContent
   const defaultEndpoint = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image-preview:generateContent'
@@ -38,16 +38,23 @@ export async function generateImage(apiKey, prompt, inputImage = null, settings 
     }]
   }
 
-  // Add input image if provided
-  if (inputImage) {
+  // Add input images if provided (supports 1 or 2 images)
+  if (inputImages) {
     try {
-      const base64Image = await imageToBase64(inputImage)
-      requestBody.contents[0].parts.push({
-        inlineData: {
-          mimeType: inputImage.type || 'image/png',
-          data: base64Image
+      // Handle both single image (backward compatibility) and array of images
+      const imagesArray = Array.isArray(inputImages) ? inputImages : [inputImages]
+      
+      for (const inputImage of imagesArray) {
+        if (inputImage) {
+          const base64Image = await imageToBase64(inputImage)
+          requestBody.contents[0].parts.push({
+            inlineData: {
+              mimeType: inputImage.type || 'image/png',
+              data: base64Image
+            }
+          })
         }
-      })
+      }
     } catch (error) {
       console.error('Error converting image to base64:', error)
       throw new Error('Failed to process input image')

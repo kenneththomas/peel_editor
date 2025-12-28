@@ -14,7 +14,7 @@ const DEFAULT_SETTINGS = {
 
 function App() {
   const [currentView, setCurrentView] = useState('generator') // 'generator' or 'gallery'
-  const [uploadedImage, setUploadedImage] = useState(null)
+  const [uploadedImages, setUploadedImages] = useState([])
   const [prompt, setPrompt] = useState('')
   const [generatedImage, setGeneratedImage] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -37,15 +37,33 @@ function App() {
     setGalleryCount(getImageCount())
   }, [currentView])
 
-  const handleImageUpload = (file) => {
+  const handleImageUpload = (file, index) => {
     const reader = new FileReader()
     reader.onload = (e) => {
-      setUploadedImage({
-        file: file,
-        preview: e.target.result
+      setUploadedImages((prev) => {
+        const newImages = [...prev]
+        // If index is provided, use it; otherwise, find the first empty slot or append
+        const targetIndex = index !== undefined ? index : newImages.length
+        newImages[targetIndex] = {
+          file: file,
+          preview: e.target.result
+        }
+        return newImages.slice(0, 2) // Ensure we never have more than 2 images
       })
     }
     reader.readAsDataURL(file)
+  }
+
+  const handleClearImage = (index) => {
+    if (index === undefined) {
+      setUploadedImages([])
+    } else {
+      setUploadedImages((prev) => {
+        const newImages = [...prev]
+        newImages.splice(index, 1)
+        return newImages
+      })
+    }
   }
 
   const handleGenerate = async () => {
@@ -72,7 +90,8 @@ function App() {
         // Not JSON, use as plain text
       }
 
-      const result = await generateImage(apiKey, parsedPrompt, uploadedImage?.file, settings, apiUrl)
+      const imageFiles = uploadedImages.map(img => img.file).filter(Boolean)
+      const result = await generateImage(apiKey, parsedPrompt, imageFiles.length > 0 ? imageFiles : null, settings, apiUrl)
       setGeneratedImage(result)
     } catch (err) {
       console.error('Generation error:', err)
@@ -174,8 +193,8 @@ function App() {
             <div className="left-panel">
               <ImageUpload
                 onImageUpload={handleImageUpload}
-                uploadedImage={uploadedImage}
-                onClear={() => setUploadedImage(null)}
+                uploadedImages={uploadedImages}
+                onClear={handleClearImage}
               />
               
               <JSONEditor
