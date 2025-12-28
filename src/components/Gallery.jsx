@@ -1,11 +1,17 @@
-import { useState, useEffect } from 'react'
-import { getSavedImages, deleteImage, clearGallery } from '../services/gallery'
+import { useState, useEffect, useRef } from 'react'
+import { getSavedImages, deleteImage, clearGallery, saveImage } from '../services/gallery'
 import './Gallery.css'
 
 function Gallery({ onImageSelect, refreshTrigger, onImport, onNewPost }) {
   const [images, setImages] = useState([])
   const [selectedImage, setSelectedImage] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [showUpload, setShowUpload] = useState(false)
+  const [uploadImage, setUploadImage] = useState(null)
+  const [uploadImagePreview, setUploadImagePreview] = useState(null)
+  const [uploadPrompt, setUploadPrompt] = useState('')
+  const [uploading, setUploading] = useState(false)
+  const fileInputRef = useRef(null)
 
   useEffect(() => {
     loadImages()
@@ -87,6 +93,75 @@ function Gallery({ onImageSelect, refreshTrigger, onImport, onNewPost }) {
     return date.toLocaleString()
   }
 
+  const handleFileSelect = (e) => {
+    const file = e.target.files?.[0]
+    if (file && file.type.startsWith('image/')) {
+      setUploadImage(file)
+      const reader = new FileReader()
+      reader.onload = (event) => {
+        setUploadImagePreview(event.target.result)
+      }
+      reader.readAsDataURL(file)
+      setShowUpload(true)
+    }
+  }
+
+  const handleImageDrop = (e) => {
+    e.preventDefault()
+    const file = e.dataTransfer.files?.[0]
+    if (file && file.type.startsWith('image/')) {
+      setUploadImage(file)
+      const reader = new FileReader()
+      reader.onload = (event) => {
+        setUploadImagePreview(event.target.result)
+      }
+      reader.readAsDataURL(file)
+      setShowUpload(true)
+    }
+  }
+
+  const handleDragOver = (e) => {
+    e.preventDefault()
+  }
+
+  const handleClearUpload = () => {
+    setUploadImage(null)
+    setUploadImagePreview(null)
+    setUploadPrompt('')
+    setShowUpload(false)
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
+  const handleSaveImage = async (e) => {
+    e.preventDefault()
+    
+    if (!uploadImage || !uploadImagePreview) {
+      alert('Please select an image')
+      return
+    }
+
+    setUploading(true)
+    try {
+      await saveImage(uploadImagePreview, { prompt: uploadPrompt.trim() })
+      
+      // Reset form and reload images
+      handleClearUpload()
+      await loadImages()
+      
+      // Notify parent component to update count
+      if (refreshTrigger !== undefined) {
+        // The parent will handle the refresh via refreshTrigger prop
+      }
+    } catch (error) {
+      console.error('Error saving image:', error)
+      alert('Failed to save image: ' + error.message)
+    } finally {
+      setUploading(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="gallery-container">
@@ -100,63 +175,135 @@ function Gallery({ onImageSelect, refreshTrigger, onImport, onNewPost }) {
     )
   }
 
-  if (images.length === 0) {
-    return (
-      <div className="gallery-container">
-        <div className="gallery-header">
-          <h2>Gallery</h2>
-        </div>
-        <div className="gallery-empty">
-          <p>No saved images yet</p>
-          <p className="gallery-empty-hint">Generate and save images to see them here</p>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="gallery-container">
       <div className="gallery-header">
-        <h2>Gallery ({images.length})</h2>
-        <button onClick={handleClearAll} className="clear-all-button">
-          Clear All
-        </button>
+        <h2>Gallery {images.length > 0 && `(${images.length})`}</h2>
+        {images.length > 0 && (
+          <button onClick={handleClearAll} className="clear-all-button">
+            Clear All
+          </button>
+        )}
       </div>
       
-      <div className="gallery-content">
-        <div className="gallery-grid">
-          {images.map((image) => (
-            <div
-              key={image.id}
-              className={`gallery-item ${selectedImage?.id === image.id ? 'selected' : ''}`}
-              onClick={() => handleImageClick(image)}
-            >
-              <div className="gallery-item-image">
-                <img src={image.imageUrl} alt={image.prompt || 'Saved image'} />
-              </div>
-              <div className="gallery-item-overlay">
+      {/* Upload Section */}
+      <div className="gallery-upload-section">
+        {!showUpload ? (
+          <div
+            className="gallery-upload-dropzone"
+            onDrop={handleImageDrop}
+            onDragOver={handleDragOver}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleFileSelect}
+              style={{ display: 'none' }}
+            />
+            <div className="gallery-upload-dropzone-content">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+              </svg>
+              <p className="gallery-upload-text">Click to upload or drag and drop an image</p>
+              <p className="gallery-upload-hint">Add an image to your gallery</p>
+            </div>
+          </div>
+        ) : (
+          <form className="gallery-upload-form" onSubmit={handleSaveImage}>
+            <div className="gallery-upload-preview-section">
+              <div className="gallery-upload-image-preview">
+                <img src={uploadImagePreview} alt="Preview" />
                 <button
-                  className="gallery-delete-button"
-                  onClick={(e) => handleDelete(image.id, e)}
-                  title="Delete image"
+                  type="button"
+                  onClick={handleClearUpload}
+                  className="gallery-upload-remove"
+                  title="Remove image"
                 >
                   ×
                 </button>
               </div>
-              {image.prompt && (
-                <div className="gallery-item-prompt">
-                  {image.prompt.length > 50 
-                    ? image.prompt.substring(0, 50) + '...' 
-                    : image.prompt}
-                </div>
-              )}
-              <div className="gallery-item-date">
-                {formatDate(image.timestamp)}
+            </div>
+            
+            <div className="gallery-upload-fields">
+              <div className="gallery-upload-field">
+                <label htmlFor="gallery-prompt">Prompt / Description (optional)</label>
+                <textarea
+                  id="gallery-prompt"
+                  value={uploadPrompt}
+                  onChange={(e) => setUploadPrompt(e.target.value)}
+                  placeholder="Enter a prompt or description for this image..."
+                  rows="3"
+                  disabled={uploading}
+                />
               </div>
             </div>
-          ))}
-        </div>
+            
+            <div className="gallery-upload-actions">
+              <button
+                type="button"
+                onClick={handleClearUpload}
+                className="gallery-upload-cancel"
+                disabled={uploading}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="gallery-upload-submit"
+                disabled={uploading}
+              >
+                {uploading ? 'Saving...' : 'Save to Gallery'}
+              </button>
+            </div>
+          </form>
+        )}
       </div>
+
+      {images.length === 0 ? (
+        <div className="gallery-empty">
+          <p>No saved images yet</p>
+          <p className="gallery-empty-hint">Upload an image above to add it to your gallery</p>
+        </div>
+      ) : (
+        <div className="gallery-content">
+          <div className="gallery-grid">
+            {images.map((image) => (
+              <div
+                key={image.id}
+                className={`gallery-item ${selectedImage?.id === image.id ? 'selected' : ''}`}
+                onClick={() => handleImageClick(image)}
+              >
+                <div className="gallery-item-image">
+                  <img src={image.imageUrl} alt={image.prompt || 'Saved image'} />
+                </div>
+                <div className="gallery-item-overlay">
+                  <button
+                    className="gallery-delete-button"
+                    onClick={(e) => handleDelete(image.id, e)}
+                    title="Delete image"
+                  >
+                    ×
+                  </button>
+                </div>
+                {image.prompt && (
+                  <div className="gallery-item-prompt">
+                    {image.prompt.length > 50 
+                      ? image.prompt.substring(0, 50) + '...' 
+                      : image.prompt}
+                  </div>
+                )}
+                <div className="gallery-item-date">
+                  {formatDate(image.timestamp)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {selectedImage && (
         <div className="gallery-modal-overlay" onClick={handleCloseModal}>
