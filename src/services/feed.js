@@ -1,69 +1,91 @@
 /**
  * Feed service for managing Instagram-style posts
- * Uses IndexedDB for permanent storage
+ * Uses file storage for permanent storage
  */
 
-const DB_NAME = 'peel_feed_db'
-const DB_VERSION = 2
-const STORE_NAME = 'posts'
+import * as fileStorage from './fileStorage'
 
-let db = null
+const POSTS_FILE = 'feed_posts.json'
+let postsCache = null
+let migrationChecked = false
 
 /**
- * Initialize IndexedDB database
+ * Initialize file storage and migrate from IndexedDB if needed
  */
-function initDB() {
-  return new Promise((resolve, reject) => {
-    if (db) {
-      resolve(db)
+async function initStorage() {
+  if (migrationChecked) {
+    return
+  }
+  
+  try {
+    // Check if file storage already has posts
+    const existingPosts = await fileStorage.readJSONFile(POSTS_FILE)
+    if (existingPosts && existingPosts.length > 0) {
+      postsCache = existingPosts
+      migrationChecked = true
       return
     }
 
-    const request = indexedDB.open(DB_NAME, DB_VERSION)
-
-    request.onerror = () => {
-      console.error('IndexedDB error:', request.error)
-      reject(request.error)
-    }
-
-    request.onsuccess = () => {
-      db = request.result
-      resolve(db)
-    }
-
-    request.onupgradeneeded = (event) => {
-      const database = event.target.result
+    // Try to migrate from IndexedDB
+    try {
+      const DB_NAME = 'peel_feed_db'
+      const STORE_NAME = 'posts'
       
-      // Create object store if it doesn't exist
-      if (!database.objectStoreNames.contains(STORE_NAME)) {
-        const objectStore = database.createObjectStore(STORE_NAME, { keyPath: 'id' })
-        objectStore.createIndex('timestamp', 'timestamp', { unique: false })
-        objectStore.createIndex('username', 'username', { unique: false })
-        objectStore.createIndex('taggedUsernames', 'taggedUsernames', { unique: false, multiEntry: true })
-      } else {
-        // Migration for existing databases
-        const transaction = event.target.transaction
-        const objectStore = transaction.objectStore(STORE_NAME)
-        
-        // Add taggedUsernames index if upgrading from version 1
-        if (event.oldVersion < 2 && !objectStore.indexNames.contains('taggedUsernames')) {
-          objectStore.createIndex('taggedUsernames', 'taggedUsernames', { unique: false, multiEntry: true })
-          
-          // Migrate existing posts to have taggedUsernames array
-          const getAllRequest = objectStore.getAll()
-          getAllRequest.onsuccess = () => {
-            const posts = getAllRequest.result
-            posts.forEach(post => {
-              if (!post.taggedUsernames) {
-                post.taggedUsernames = []
-                objectStore.put(post)
-              }
-            })
+      const db = await new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME)
+        request.onsuccess = () => resolve(request.result)
+        request.onerror = () => reject(request.error)
+      })
+
+      const transaction = db.transaction([STORE_NAME], 'readonly')
+      const store = transaction.objectStore(STORE_NAME)
+      const getAllRequest = store.getAll()
+
+      const indexedDBPosts = await new Promise((resolve, reject) => {
+        getAllRequest.onsuccess = () => resolve(getAllRequest.result)
+        getAllRequest.onerror = () => reject(getAllRequest.error)
+      })
+
+      if (indexedDBPosts && indexedDBPosts.length > 0) {
+        // Ensure all posts have taggedUsernames
+        indexedDBPosts.forEach(post => {
+          if (!post.taggedUsernames) {
+            post.taggedUsernames = []
           }
-        }
+        })
+        
+        // Save to file storage
+        await fileStorage.writeJSONFile(POSTS_FILE, indexedDBPosts)
+        postsCache = indexedDBPosts
+        console.log(`Migrated ${indexedDBPosts.length} posts from IndexedDB to file storage`)
+      } else {
+        postsCache = []
       }
+    } catch (error) {
+      // IndexedDB might not exist or be accessible, that's okay
+      console.log('No IndexedDB data to migrate:', error.message)
+      postsCache = []
     }
-  })
+    
+    migrationChecked = true
+  } catch (error) {
+    console.error('Error initializing storage:', error)
+    postsCache = []
+    migrationChecked = true
+  }
+}
+
+/**
+ * Save posts to file storage
+ */
+async function savePosts(posts) {
+  try {
+    await fileStorage.writeJSONFile(POSTS_FILE, posts)
+    postsCache = posts
+  } catch (error) {
+    console.error('Error saving posts:', error)
+    throw error
+  }
 }
 
 /**
@@ -72,41 +94,53 @@ function initDB() {
  */
 export async function getAllPosts() {
   try {
-    await initDB()
+    await initStorage()
     
-    const transaction = db.transaction([STORE_NAME], 'readonly')
-    const store = transaction.objectStore(STORE_NAME)
-    const index = store.index('timestamp')
-    
-    const request = index.openCursor(null, 'prev') // Sort by timestamp descending
-    const posts = []
-    const seenIds = new Set()
-
-    return new Promise((resolve, reject) => {
-      request.onsuccess = (event) => {
-        const cursor = event.target.result
-        if (cursor) {
-          const post = cursor.value
-          // Ensure taggedUsernames exists for backward compatibility
-          if (!post.taggedUsernames) {
-            post.taggedUsernames = []
-          }
-          // Only add if we haven't seen this post ID before
-          if (!seenIds.has(post.id)) {
-            posts.push(post)
-            seenIds.add(post.id)
-          }
-          cursor.continue()
-        } else {
-          resolve(posts)
+    if (postsCache) {
+      // Ensure all posts have taggedUsernames for backward compatibility
+      postsCache.forEach(post => {
+        if (!post.taggedUsernames) {
+          post.taggedUsernames = []
         }
-      }
-
-      request.onerror = () => {
-        console.error('Error loading posts:', request.error)
-        reject(request.error)
+      })
+      
+      // Sort by timestamp descending and deduplicate
+      const seenIds = new Set()
+      const sorted = postsCache
+        .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+        .filter(post => {
+          if (seenIds.has(post.id)) {
+            return false
+          }
+          seenIds.add(post.id)
+          return true
+        })
+      
+      return sorted
+    }
+    
+    // Try to load from file
+    const posts = await fileStorage.readJSONFile(POSTS_FILE) || []
+    postsCache = posts
+    
+    // Ensure all posts have taggedUsernames
+    posts.forEach(post => {
+      if (!post.taggedUsernames) {
+        post.taggedUsernames = []
       }
     })
+    
+    // Sort and deduplicate
+    const seenIds = new Set()
+    return posts
+      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+      .filter(post => {
+        if (seenIds.has(post.id)) {
+          return false
+        }
+        seenIds.add(post.id)
+        return true
+      })
   } catch (error) {
     console.error('Error loading posts:', error)
     return []
@@ -118,70 +152,23 @@ export async function getAllPosts() {
  */
 export async function getPostsByUsername(username) {
   try {
-    await initDB()
-    
-    const transaction = db.transaction([STORE_NAME], 'readonly')
-    const store = transaction.objectStore(STORE_NAME)
-    
-    // Get posts where user is the author
-    const usernameIndex = store.index('username')
-    const usernameRequest = usernameIndex.openCursor(IDBKeyRange.only(username), 'prev')
-    const posts = []
+    const allPosts = await getAllPosts()
     const postIds = new Set()
+    const userPosts = []
 
-    return new Promise((resolve, reject) => {
-      // First, get posts where user is author
-      usernameRequest.onsuccess = (event) => {
-        const cursor = event.target.result
-        if (cursor) {
-          const post = cursor.value
-          // Ensure taggedUsernames exists for backward compatibility
-          if (!post.taggedUsernames) {
-            post.taggedUsernames = []
-          }
-          posts.push(post)
-          postIds.add(post.id)
-          cursor.continue()
-        } else {
-          // Then, get posts where user is tagged
-          const taggedIndex = store.index('taggedUsernames')
-          const taggedRequest = taggedIndex.openCursor(IDBKeyRange.only(username), 'prev')
-          
-          taggedRequest.onsuccess = (tagEvent) => {
-            const taggedCursor = tagEvent.target.result
-            if (taggedCursor) {
-              const post = taggedCursor.value
-              // Ensure taggedUsernames exists for backward compatibility
-              if (!post.taggedUsernames) {
-                post.taggedUsernames = []
-              }
-              // Only add if not already in the list (shouldn't happen, but just in case)
-              if (!postIds.has(post.id)) {
-                posts.push(post)
-                postIds.add(post.id)
-              }
-              taggedCursor.continue()
-            } else {
-              // Sort by timestamp descending
-              posts.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-              resolve(posts)
-            }
-          }
-          
-          taggedRequest.onerror = () => {
-            console.error('Error loading tagged posts:', taggedRequest.error)
-            // Resolve with what we have so far
-            posts.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-            resolve(posts)
-          }
-        }
+    // Get posts where user is author or tagged
+    for (const post of allPosts) {
+      const isAuthor = post.username === username
+      const isTagged = post.taggedUsernames && post.taggedUsernames.includes(username)
+      
+      if ((isAuthor || isTagged) && !postIds.has(post.id)) {
+        userPosts.push(post)
+        postIds.add(post.id)
       }
+    }
 
-      usernameRequest.onerror = () => {
-        console.error('Error loading posts by username:', usernameRequest.error)
-        reject(usernameRequest.error)
-      }
-    })
+    // Sort by timestamp descending
+    return userPosts.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
   } catch (error) {
     console.error('Error loading posts by username:', error)
     return []
@@ -197,7 +184,7 @@ export async function getPostsByUsername(username) {
  */
 export async function createPost(imageUrl, username, caption, taggedUsernames = []) {
   try {
-    await initDB()
+    await initStorage()
     
     // Filter out empty strings and ensure unique usernames
     const cleanTaggedUsernames = [...new Set(taggedUsernames.filter(u => u && u.trim()))]
@@ -213,17 +200,9 @@ export async function createPost(imageUrl, username, caption, taggedUsernames = 
       taggedUsernames: cleanTaggedUsernames
     }
 
-    const transaction = db.transaction([STORE_NAME], 'readwrite')
-    const store = transaction.objectStore(STORE_NAME)
-    
-    await new Promise((resolve, reject) => {
-      const request = store.add(newPost)
-      request.onsuccess = () => resolve(newPost)
-      request.onerror = () => {
-        console.error('Error creating post:', request.error)
-        reject(new Error('Failed to create post'))
-      }
-    })
+    const allPosts = await getAllPosts()
+    allPosts.unshift(newPost) // Add to beginning
+    await savePosts(allPosts)
 
     return newPost
   } catch (error) {
@@ -237,58 +216,44 @@ export async function createPost(imageUrl, username, caption, taggedUsernames = 
  */
 export async function updatePost(postId, updates) {
   try {
-    await initDB()
+    await initStorage()
     
-    // First, get the existing post
-    const transaction = db.transaction([STORE_NAME], 'readwrite')
-    const store = transaction.objectStore(STORE_NAME)
+    const allPosts = await getAllPosts()
+    const postIndex = allPosts.findIndex(p => p.id === postId)
     
-    const getRequest = store.get(postId)
+    if (postIndex === -1) {
+      throw new Error('Post not found')
+    }
     
-    return new Promise((resolve, reject) => {
-      getRequest.onsuccess = () => {
-        const post = getRequest.result
-        if (!post) {
-          reject(new Error('Post not found'))
-          return
-        }
-        
-        // Ensure taggedUsernames exists for backward compatibility
-        if (!post.taggedUsernames) {
-          post.taggedUsernames = []
-        }
-        
-        // Update only the provided fields
-        const updatedPost = {
-          ...post,
-          ...updates
-        }
-        
-        // Ensure likesCount is a number
-        if (updates.likesCount !== undefined) {
-          updatedPost.likesCount = parseInt(updates.likesCount) || 0
-        }
-        
-        // Ensure taggedUsernames is an array
-        if (updates.taggedUsernames !== undefined) {
-          updatedPost.taggedUsernames = [...new Set(updates.taggedUsernames.filter(u => u && u.trim()))]
-        } else if (!updatedPost.taggedUsernames) {
-          updatedPost.taggedUsernames = []
-        }
-        
-        const updateRequest = store.put(updatedPost)
-        updateRequest.onsuccess = () => resolve(updatedPost)
-        updateRequest.onerror = () => {
-          console.error('Error updating post:', updateRequest.error)
-          reject(new Error('Failed to update post'))
-        }
-      }
-      
-      getRequest.onerror = () => {
-        console.error('Error getting post:', getRequest.error)
-        reject(new Error('Failed to get post'))
-      }
-    })
+    const post = allPosts[postIndex]
+    
+    // Ensure taggedUsernames exists for backward compatibility
+    if (!post.taggedUsernames) {
+      post.taggedUsernames = []
+    }
+    
+    // Update only the provided fields
+    const updatedPost = {
+      ...post,
+      ...updates
+    }
+    
+    // Ensure likesCount is a number
+    if (updates.likesCount !== undefined) {
+      updatedPost.likesCount = parseInt(updates.likesCount) || 0
+    }
+    
+    // Ensure taggedUsernames is an array
+    if (updates.taggedUsernames !== undefined) {
+      updatedPost.taggedUsernames = [...new Set(updates.taggedUsernames.filter(u => u && u.trim()))]
+    } else if (!updatedPost.taggedUsernames) {
+      updatedPost.taggedUsernames = []
+    }
+    
+    allPosts[postIndex] = updatedPost
+    await savePosts(allPosts)
+    
+    return updatedPost
   } catch (error) {
     console.error('Error updating post:', error)
     throw new Error('Failed to update post')
@@ -300,20 +265,16 @@ export async function updatePost(postId, updates) {
  */
 export async function deletePost(postId) {
   try {
-    await initDB()
+    await initStorage()
     
-    const transaction = db.transaction([STORE_NAME], 'readwrite')
-    const store = transaction.objectStore(STORE_NAME)
+    const allPosts = await getAllPosts()
+    const filteredPosts = allPosts.filter(p => p.id !== postId)
     
-    await new Promise((resolve, reject) => {
-      const request = store.delete(postId)
-      request.onsuccess = () => resolve(true)
-      request.onerror = () => {
-        console.error('Error deleting post:', request.error)
-        reject(new Error('Failed to delete post'))
-      }
-    })
-
+    if (filteredPosts.length === allPosts.length) {
+      throw new Error('Post not found')
+    }
+    
+    await savePosts(filteredPosts)
     return true
   } catch (error) {
     console.error('Error deleting post:', error)

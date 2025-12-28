@@ -1,46 +1,83 @@
 /**
  * Profile service for managing user profile data
- * Uses IndexedDB for permanent storage
+ * Uses file storage for permanent storage
  */
 
-const DB_NAME = 'peel_profile_db'
-const DB_VERSION = 1
-const STORE_NAME = 'profiles'
+import * as fileStorage from './fileStorage'
 
-let db = null
+const PROFILES_FILE = 'profiles.json'
+let profilesCache = null
+let migrationChecked = false
 
 /**
- * Initialize IndexedDB database
+ * Initialize file storage and migrate from IndexedDB if needed
  */
-function initDB() {
-  return new Promise((resolve, reject) => {
-    if (db) {
-      resolve(db)
+async function initStorage() {
+  if (migrationChecked) {
+    return
+  }
+  
+  try {
+    // Check if file storage already has profiles
+    const existingProfiles = await fileStorage.readJSONFile(PROFILES_FILE)
+    if (existingProfiles && existingProfiles.length > 0) {
+      profilesCache = existingProfiles
+      migrationChecked = true
       return
     }
 
-    const request = indexedDB.open(DB_NAME, DB_VERSION)
-
-    request.onerror = () => {
-      console.error('IndexedDB error:', request.error)
-      reject(request.error)
-    }
-
-    request.onsuccess = () => {
-      db = request.result
-      resolve(db)
-    }
-
-    request.onupgradeneeded = (event) => {
-      const database = event.target.result
+    // Try to migrate from IndexedDB
+    try {
+      const DB_NAME = 'peel_profile_db'
+      const STORE_NAME = 'profiles'
       
-      // Create object store if it doesn't exist
-      if (!database.objectStoreNames.contains(STORE_NAME)) {
-        const objectStore = database.createObjectStore(STORE_NAME, { keyPath: 'username' })
-        objectStore.createIndex('username', 'username', { unique: true })
+      const db = await new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME)
+        request.onsuccess = () => resolve(request.result)
+        request.onerror = () => reject(request.error)
+      })
+
+      const transaction = db.transaction([STORE_NAME], 'readonly')
+      const store = transaction.objectStore(STORE_NAME)
+      const getAllRequest = store.getAll()
+
+      const indexedDBProfiles = await new Promise((resolve, reject) => {
+        getAllRequest.onsuccess = () => resolve(getAllRequest.result)
+        getAllRequest.onerror = () => reject(getAllRequest.error)
+      })
+
+      if (indexedDBProfiles && indexedDBProfiles.length > 0) {
+        await fileStorage.writeJSONFile(PROFILES_FILE, indexedDBProfiles)
+        profilesCache = indexedDBProfiles
+        console.log(`Migrated ${indexedDBProfiles.length} profiles from IndexedDB to file storage`)
+      } else {
+        profilesCache = []
       }
+    } catch (error) {
+      // IndexedDB might not exist or be accessible, that's okay
+      console.log('No IndexedDB data to migrate:', error.message)
+      profilesCache = []
     }
-  })
+    
+    migrationChecked = true
+  } catch (error) {
+    console.error('Error initializing storage:', error)
+    profilesCache = []
+    migrationChecked = true
+  }
+}
+
+/**
+ * Save profiles to file storage
+ */
+async function saveProfiles(profiles) {
+  try {
+    await fileStorage.writeJSONFile(PROFILES_FILE, profiles)
+    profilesCache = profiles
+  } catch (error) {
+    console.error('Error saving profiles:', error)
+    throw error
+  }
 }
 
 /**
@@ -48,23 +85,19 @@ function initDB() {
  */
 export async function getProfile(username) {
   try {
-    await initDB()
+    await initStorage()
     
-    const transaction = db.transaction([STORE_NAME], 'readonly')
-    const store = transaction.objectStore(STORE_NAME)
+    if (profilesCache) {
+      const profile = profilesCache.find(p => p.username === username)
+      return profile || { username, bio: '', profilePicture: null }
+    }
     
-    return new Promise((resolve, reject) => {
-      const request = store.get(username)
-      
-      request.onsuccess = () => {
-        resolve(request.result || { username, bio: '', profilePicture: null })
-      }
-      
-      request.onerror = () => {
-        console.error('Error loading profile:', request.error)
-        reject(request.error)
-      }
-    })
+    // Try to load from file
+    const profiles = await fileStorage.readJSONFile(PROFILES_FILE) || []
+    profilesCache = profiles
+    
+    const profile = profiles.find(p => p.username === username)
+    return profile || { username, bio: '', profilePicture: null }
   } catch (error) {
     console.error('Error loading profile:', error)
     return { username, bio: '', profilePicture: null }
@@ -76,7 +109,7 @@ export async function getProfile(username) {
  */
 export async function saveProfile(username, bio, profilePicture) {
   try {
-    await initDB()
+    await initStorage()
     
     const profile = {
       username: username,
@@ -85,18 +118,16 @@ export async function saveProfile(username, bio, profilePicture) {
       updatedAt: new Date().toISOString()
     }
 
-    const transaction = db.transaction([STORE_NAME], 'readwrite')
-    const store = transaction.objectStore(STORE_NAME)
+    let profiles = await fileStorage.readJSONFile(PROFILES_FILE) || []
+    const existingIndex = profiles.findIndex(p => p.username === username)
     
-    await new Promise((resolve, reject) => {
-      const request = store.put(profile)
-      request.onsuccess = () => resolve(profile)
-      request.onerror = () => {
-        console.error('Error saving profile:', request.error)
-        reject(new Error('Failed to save profile'))
-      }
-    })
-
+    if (existingIndex >= 0) {
+      profiles[existingIndex] = profile
+    } else {
+      profiles.push(profile)
+    }
+    
+    await saveProfiles(profiles)
     return profile
   } catch (error) {
     console.error('Error saving profile:', error)

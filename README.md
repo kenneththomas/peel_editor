@@ -8,7 +8,8 @@ A modern web UI frontend for the Google Nano Banana Pro API, specializing in JSO
 - 📝 **JSON Prompt Editor**: Syntax-highlighted JSON editor with real-time validation
 - 🔄 **Flexible Prompts**: Supports both JSON and plain text prompts
 - 🖼️ **Image Generation**: Generate images from scratch or edit existing ones
-- 💾 **API Key Management**: Secure API key storage in localStorage
+- 💾 **File-Based Storage**: Persistent data storage in your Documents folder (works across browsers/devices)
+- 📁 **Data Migration**: Easy migration from browser storage to file-based storage
 - 🎯 **Modern UI**: Beautiful, responsive design with smooth animations
 
 ## Getting Started
@@ -59,12 +60,61 @@ When your prompt starts with `{` or `[`, it will be treated as JSON and syntax-h
 
 Update the API endpoint in `src/services/api.js` with the actual Google Nano Banana Pro API endpoint.
 
+## Data Storage
+
+Peel Editor now uses **file-based storage** instead of browser storage. This means your data is stored in a folder in your Documents directory, making it:
+
+- ✅ **Persistent** across browser sessions
+- ✅ **Accessible** from any browser on your computer
+- ✅ **Safe** - your data isn't lost when clearing browser data
+- ✅ **Portable** - you can backup or move your data folder
+
+### First-Time Setup
+
+When you first use the app, you'll be prompted to:
+1. Select a folder where your data will be stored (recommended: Documents folder)
+2. The app will create a `PeelEditor/data` folder inside your selected location
+
+### Migrating Existing Data
+
+If you have existing data in your browser:
+
+1. **Automatic Detection**: The app will automatically detect if you have browser-stored data
+2. **Migration Prompt**: A migration dialog will appear on first load
+3. **Select Folder**: Choose where you want your data stored
+4. **Export Complete**: All your data (posts, images, profiles, prompts, settings) will be copied to files
+
+**Note**: Your original browser data is **never deleted** - it's just copied to files. You can still access it in your browser if needed.
+
+### Data Location
+
+Your data is stored in:
+```
+Documents/PeelEditor/data/
+├── feed_posts.json       # All feed posts
+├── gallery_images.json   # Gallery image metadata
+├── profiles.json         # User profiles
+├── prompts.json          # Saved prompts
+└── settings.json         # App settings (API key, API URL, etc.)
+```
+
+Image files are stored alongside the JSON files with descriptive names.
+
+### Browser Compatibility
+
+File-based storage uses the **File System Access API**, which is currently supported in:
+- ✅ Chrome/Edge (Chromium-based browsers)
+- ✅ Other browsers may require different approaches
+
+If your browser doesn't support the File System Access API, the app will show an error message.
+
 ## Technologies
 
 - React 18
 - Vite
 - Monaco Editor (for JSON syntax highlighting)
 - React Dropzone (for file uploads)
+- File System Access API (for file storage)
 
 ## License
 
