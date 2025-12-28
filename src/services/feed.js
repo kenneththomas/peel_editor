@@ -153,6 +153,57 @@ export async function createPost(imageUrl, username, caption) {
 }
 
 /**
+ * Update a post (caption and likesCount)
+ */
+export async function updatePost(postId, updates) {
+  try {
+    await initDB()
+    
+    // First, get the existing post
+    const transaction = db.transaction([STORE_NAME], 'readwrite')
+    const store = transaction.objectStore(STORE_NAME)
+    
+    const getRequest = store.get(postId)
+    
+    return new Promise((resolve, reject) => {
+      getRequest.onsuccess = () => {
+        const post = getRequest.result
+        if (!post) {
+          reject(new Error('Post not found'))
+          return
+        }
+        
+        // Update only the provided fields
+        const updatedPost = {
+          ...post,
+          ...updates
+        }
+        
+        // Ensure likesCount is a number
+        if (updates.likesCount !== undefined) {
+          updatedPost.likesCount = parseInt(updates.likesCount) || 0
+        }
+        
+        const updateRequest = store.put(updatedPost)
+        updateRequest.onsuccess = () => resolve(updatedPost)
+        updateRequest.onerror = () => {
+          console.error('Error updating post:', updateRequest.error)
+          reject(new Error('Failed to update post'))
+        }
+      }
+      
+      getRequest.onerror = () => {
+        console.error('Error getting post:', getRequest.error)
+        reject(new Error('Failed to get post'))
+      }
+    })
+  } catch (error) {
+    console.error('Error updating post:', error)
+    throw new Error('Failed to update post')
+  }
+}
+
+/**
  * Delete a post
  */
 export async function deletePost(postId) {

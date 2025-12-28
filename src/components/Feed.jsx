@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { getAllPosts, createPost } from '../services/feed'
+import PostDetailModal from './PostDetailModal'
 import './Feed.css'
 
 function Feed({ onUsernameClick, refreshTrigger }) {
@@ -11,6 +12,7 @@ function Feed({ onUsernameClick, refreshTrigger }) {
   const [uploadUsername, setUploadUsername] = useState('')
   const [uploadCaption, setUploadCaption] = useState('')
   const [uploading, setUploading] = useState(false)
+  const [selectedPost, setSelectedPost] = useState(null)
   const fileInputRef = useRef(null)
 
   useEffect(() => {
@@ -111,6 +113,18 @@ function Feed({ onUsernameClick, refreshTrigger }) {
     if (onUsernameClick) {
       onUsernameClick(username)
     }
+  }
+
+  const handlePostClick = (post) => {
+    setSelectedPost(post)
+  }
+
+  const handleCloseModal = () => {
+    setSelectedPost(null)
+  }
+
+  const handlePostUpdate = async () => {
+    await loadPosts()
   }
 
   const formatDate = (timestamp) => {
@@ -261,7 +275,7 @@ function Feed({ onUsernameClick, refreshTrigger }) {
                   src={post.imageUrl}
                   alt={post.caption || `Post by ${post.username}`}
                   className="feed-post-image"
-                  onClick={() => handleUsernameClick(post.username)}
+                  onClick={() => handlePostClick(post)}
                 />
               </div>
               
@@ -292,6 +306,15 @@ function Feed({ onUsernameClick, refreshTrigger }) {
             </div>
           ))}
         </div>
+      )}
+
+      {selectedPost && (
+        <PostDetailModal
+          post={selectedPost}
+          onClose={handleCloseModal}
+          onUsernameClick={onUsernameClick}
+          onUpdate={handlePostUpdate}
+        />
       )}
     </div>
   )
