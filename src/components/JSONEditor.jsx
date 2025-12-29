@@ -35,13 +35,9 @@ function JSONEditor({ value, onChange }) {
 
   // Load saved prompts when component mounts or when menu is shown
   useEffect(() => {
-    const loadPrompts = async () => {
-      if (showLoadMenu) {
-        const prompts = await getSavedPrompts()
-        setSavedPrompts(prompts)
-      }
+    if (showLoadMenu) {
+      setSavedPrompts(getSavedPrompts())
     }
-    loadPrompts()
   }, [showLoadMenu])
 
   // Close dropdown when clicking outside
@@ -82,14 +78,11 @@ function JSONEditor({ value, onChange }) {
     setSavePromptName('')
   }
 
-  const handleConfirmSave = async () => {
+  const handleConfirmSave = () => {
     try {
-      await savePrompt(value, savePromptName || null)
+      savePrompt(value, savePromptName || null)
       setShowSaveModal(false)
       setSavePromptName('')
-      // Refresh prompts list
-      const prompts = await getSavedPrompts()
-      setSavedPrompts(prompts)
       alert('Prompt saved successfully!')
     } catch (error) {
       alert('Failed to save prompt: ' + error.message)
@@ -101,13 +94,12 @@ function JSONEditor({ value, onChange }) {
     setShowLoadMenu(false)
   }
 
-  const handleDeletePrompt = async (promptId, e) => {
+  const handleDeletePrompt = (promptId, e) => {
     e.stopPropagation()
     if (confirm('Are you sure you want to delete this prompt?')) {
       try {
-        await deletePrompt(promptId)
-        const prompts = await getSavedPrompts()
-        setSavedPrompts(prompts)
+        deletePrompt(promptId)
+        setSavedPrompts(getSavedPrompts())
       } catch (error) {
         alert('Failed to delete prompt: ' + error.message)
       }

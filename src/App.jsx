@@ -7,12 +7,9 @@ import Gallery from './components/Gallery'
 import Feed from './components/Feed'
 import Profile from './components/Profile'
 import PostModal from './components/PostModal'
-import DataMigration from './components/DataMigration'
 import { generateImage } from './services/api'
 import { saveImage, getImageCount } from './services/gallery'
 import { createPost, getPostCount } from './services/feed'
-import * as settingsService from './services/settings'
-import { getMigrationStatus } from './services/migrateData'
 import './App.css'
 
 const DEFAULT_SETTINGS = {
@@ -27,109 +24,20 @@ function App() {
   const [generatedImage, setGeneratedImage] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
-  const [apiKey, setApiKey] = useState('')
-  const [apiUrl, setApiUrl] = useState('')
-  const [settings, setSettings] = useState(DEFAULT_SETTINGS)
+  const [apiKey, setApiKey] = useState(localStorage.getItem('apiKey') || '')
+  const [apiUrl, setApiUrl] = useState(localStorage.getItem('apiUrl') || '')
+  const [settings, setSettings] = useState(() => {
+    const saved = localStorage.getItem('settings')
+    return saved ? { ...DEFAULT_SETTINGS, ...JSON.parse(saved) } : DEFAULT_SETTINGS
+  })
   const [galleryCount, setGalleryCount] = useState(0)
   const [postCount, setPostCount] = useState(0)
   const [selectedImageForPost, setSelectedImageForPost] = useState(null)
-  const [settingsLoaded, setSettingsLoaded] = useState(false)
-  const [showMigration, setShowMigration] = useState(false)
-  const [migrationChecked, setMigrationChecked] = useState(false)
 
-  // Check if migration is needed on mount
+  // Save settings to localStorage when they change
   useEffect(() => {
-    const checkMigration = async () => {
-      try {
-        const status = await getMigrationStatus()
-        
-        // If migration is already completed, don't show the popup
-        if (status.migrated) {
-          setMigrationChecked(true)
-          return
-        }
-        
-        // Check if there's localStorage data that should be migrated
-        const hasLocalStorage = (
-          localStorage.getItem('apiKey') || 
-          localStorage.getItem('apiUrl') || 
-          localStorage.getItem('settings') ||
-          localStorage.getItem('peel_prompts') ||
-          localStorage.getItem('peel_gallery')
-        )
-        
-        // Check for IndexedDB databases (if API is available)
-        let hasIndexedDB = false
-        try {
-          if (indexedDB.databases) {
-            const databases = await indexedDB.databases()
-            hasIndexedDB = databases.length > 0 && databases.some(db => 
-              db.name && (
-                db.name === 'peel_feed_db' || 
-                db.name === 'peel_gallery_db' || 
-                db.name === 'peel_profile_db'
-              )
-            )
-          }
-        } catch (e) {
-          // indexedDB.databases() not supported, check by trying to open databases
-          try {
-            // Try to open one of the databases to see if it exists
-            const testDb = await new Promise((resolve, reject) => {
-              const request = indexedDB.open('peel_feed_db')
-              request.onsuccess = () => {
-                resolve(request.result)
-                request.result.close()
-              }
-              request.onerror = () => reject(request.error)
-            })
-            hasIndexedDB = true
-          } catch (e) {
-            // No IndexedDB data
-          }
-        }
-        
-        // Only show migration if there's existing data and it hasn't been migrated
-        if ((hasIndexedDB || hasLocalStorage) && !status.migrated) {
-          setShowMigration(true)
-        }
-        setMigrationChecked(true)
-      } catch (error) {
-        console.error('Error checking migration status:', error)
-        setMigrationChecked(true)
-      }
-    }
-    checkMigration()
-  }, [])
-
-  // Load settings from file storage on mount
-  useEffect(() => {
-    const loadSettings = async () => {
-      try {
-        const loadedApiKey = await settingsService.getApiKey()
-        const loadedApiUrl = await settingsService.getApiUrl()
-        const loadedSettings = await settingsService.getAppSettings()
-        setApiKey(loadedApiKey)
-        setApiUrl(loadedApiUrl)
-        setSettings({ ...DEFAULT_SETTINGS, ...loadedSettings })
-        setSettingsLoaded(true)
-      } catch (error) {
-        console.error('Error loading settings:', error)
-        setSettingsLoaded(true)
-      }
-    }
-    loadSettings()
-  }, [])
-
-  // Save settings to file storage when they change
-  useEffect(() => {
-    if (settingsLoaded) {
-      // Don't await - allow it to fail silently if directory not initialized yet
-      settingsService.setAppSettings(settings).catch(() => {
-        // Silently fail - directory might not be initialized yet
-      })
-    }
-  }, [settings, settingsLoaded])
+    localStorage.setItem('settings', JSON.stringify(settings))
+  }, [settings])
 
   // Update gallery and post counts when view changes
   useEffect(() => {
@@ -206,24 +114,16 @@ function App() {
     }
   }
 
-  const handleApiKeyChange = async (e) => {
+  const handleApiKeyChange = (e) => {
     const key = e.target.value
     setApiKey(key)
-    try {
-      await settingsService.setApiKey(key)
-    } catch (error) {
-      console.error('Error saving API key:', error)
-    }
+    localStorage.setItem('apiKey', key)
   }
 
-  const handleApiUrlChange = async (e) => {
+  const handleApiUrlChange = (e) => {
     const url = e.target.value
     setApiUrl(url)
-    try {
-      await settingsService.setApiUrl(url)
-    } catch (error) {
-      console.error('Error saving API URL:', error)
-    }
+    localStorage.setItem('apiUrl', url)
   }
 
   const handleSaveImage = async (imageData, imagePrompt) => {
@@ -423,12 +323,6 @@ function App() {
             image={selectedImageForPost}
             onClose={() => setSelectedImageForPost(null)}
             onCreatePost={handleCreatePost}
-          />
-        )}
-
-        {showMigration && migrationChecked && (
-          <DataMigration
-            onComplete={() => setShowMigration(false)}
           />
         )}
       </div>

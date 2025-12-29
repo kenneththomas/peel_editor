@@ -1,101 +1,102 @@
 /**
  * Gallery service for managing saved images
- * Uses file storage for permanent storage
+ * Uses IndexedDB for permanent storage with large capacity
  */
 
-import * as fileStorage from './fileStorage'
+const DB_NAME = 'peel_gallery_db'
+const DB_VERSION = 1
+const STORE_NAME = 'images'
 
-const IMAGES_FILE = 'gallery_images.json'
-let imagesCache = null
-let migrationChecked = false
+let db = null
 
 /**
- * Initialize file storage and migrate from IndexedDB/localStorage if needed
+ * Initialize IndexedDB database
  */
-async function initStorage() {
-  if (migrationChecked) {
-    return
-  }
-  
-  try {
-    // Check if file storage already has images
-    const existingImages = await fileStorage.readJSONFile(IMAGES_FILE)
-    if (existingImages && existingImages.length > 0) {
-      imagesCache = existingImages
-      migrationChecked = true
+function initDB() {
+  return new Promise((resolve, reject) => {
+    if (db) {
+      resolve(db)
       return
     }
 
-    // Try to migrate from IndexedDB
-    try {
-      const DB_NAME = 'peel_gallery_db'
-      const STORE_NAME = 'images'
+    const request = indexedDB.open(DB_NAME, DB_VERSION)
+
+    request.onerror = () => {
+      console.error('IndexedDB error:', request.error)
+      reject(request.error)
+    }
+
+    request.onsuccess = () => {
+      db = request.result
+      resolve(db)
+    }
+
+    request.onupgradeneeded = (event) => {
+      const database = event.target.result
       
-      const db = await new Promise((resolve, reject) => {
-        const request = indexedDB.open(DB_NAME)
-        request.onsuccess = () => resolve(request.result)
-        request.onerror = () => reject(request.error)
-      })
-
-      const transaction = db.transaction([STORE_NAME], 'readonly')
-      const store = transaction.objectStore(STORE_NAME)
-      const getAllRequest = store.getAll()
-
-      const indexedDBImages = await new Promise((resolve, reject) => {
-        getAllRequest.onsuccess = () => resolve(getAllRequest.result)
-        getAllRequest.onerror = () => reject(getAllRequest.error)
-      })
-
-      if (indexedDBImages && indexedDBImages.length > 0) {
-        await fileStorage.writeJSONFile(IMAGES_FILE, indexedDBImages)
-        imagesCache = indexedDBImages
-        console.log(`Migrated ${indexedDBImages.length} images from IndexedDB to file storage`)
-        migrationChecked = true
-        return
+      // Create object store if it doesn't exist
+      if (!database.objectStoreNames.contains(STORE_NAME)) {
+        const objectStore = database.createObjectStore(STORE_NAME, { keyPath: 'id' })
+        objectStore.createIndex('timestamp', 'timestamp', { unique: false })
       }
-    } catch (error) {
-      // IndexedDB might not exist, try localStorage
     }
-
-    // Try to migrate from localStorage (legacy)
-    try {
-      const localStorageKey = 'peel_gallery'
-      const saved = localStorage.getItem(localStorageKey)
-      if (saved) {
-        const images = JSON.parse(saved)
-        if (images.length > 0) {
-          await fileStorage.writeJSONFile(IMAGES_FILE, images)
-          imagesCache = images
-          localStorage.removeItem(localStorageKey)
-          console.log(`Migrated ${images.length} images from localStorage to file storage`)
-        }
-      }
-    } catch (error) {
-      // No localStorage data, that's okay
-    }
-
-    if (!imagesCache) {
-      imagesCache = []
-    }
-    
-    migrationChecked = true
-  } catch (error) {
-    console.error('Error initializing storage:', error)
-    imagesCache = []
-    migrationChecked = true
-  }
+  })
 }
 
 /**
- * Save images to file storage
+ * Migrate existing localStorage data to IndexedDB (one-time migration)
  */
-async function saveImages(images) {
+async function migrateFromLocalStorage() {
   try {
-    await fileStorage.writeJSONFile(IMAGES_FILE, images)
-    imagesCache = images
+    const localStorageKey = 'peel_gallery'
+    const saved = localStorage.getItem(localStorageKey)
+    
+    if (!saved) {
+      return // Nothing to migrate
+    }
+
+    const images = JSON.parse(saved)
+    if (images.length === 0) {
+      localStorage.removeItem(localStorageKey)
+      return
+    }
+
+    // Check if migration already happened by checking if IndexedDB has data
+    const database = await initDB()
+    const countRequest = database.transaction([STORE_NAME], 'readonly')
+      .objectStore(STORE_NAME)
+      .count()
+
+    const count = await new Promise((resolve, reject) => {
+      countRequest.onsuccess = () => resolve(countRequest.result)
+      countRequest.onerror = () => reject(countRequest.error)
+    })
+
+    // If IndexedDB already has data, don't migrate
+    if (count > 0) {
+      localStorage.removeItem(localStorageKey)
+      return
+    }
+
+    // Migrate images to IndexedDB
+    const transaction = database.transaction([STORE_NAME], 'readwrite')
+    const store = transaction.objectStore(STORE_NAME)
+
+    for (const image of images) {
+      store.add(image)
+    }
+
+    await new Promise((resolve, reject) => {
+      transaction.oncomplete = () => {
+        localStorage.removeItem(localStorageKey)
+        console.log(`Migrated ${images.length} images from localStorage to IndexedDB`)
+        resolve()
+      }
+      transaction.onerror = () => reject(transaction.error)
+    })
   } catch (error) {
-    console.error('Error saving images:', error)
-    throw error
+    console.error('Migration error:', error)
+    // Don't throw - allow app to continue even if migration fails
   }
 }
 
@@ -104,19 +105,32 @@ async function saveImages(images) {
  */
 export async function getSavedImages() {
   try {
-    await initStorage()
+    await initDB()
+    await migrateFromLocalStorage() // One-time migration
     
-    if (imagesCache) {
-      // Sort by timestamp descending
-      return [...imagesCache].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-    }
+    const transaction = db.transaction([STORE_NAME], 'readonly')
+    const store = transaction.objectStore(STORE_NAME)
+    const index = store.index('timestamp')
     
-    // Try to load from file
-    const images = await fileStorage.readJSONFile(IMAGES_FILE) || []
-    imagesCache = images
-    
-    // Sort by timestamp descending
-    return [...images].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+    const request = index.openCursor(null, 'prev') // Sort by timestamp descending
+    const images = []
+
+    return new Promise((resolve, reject) => {
+      request.onsuccess = (event) => {
+        const cursor = event.target.result
+        if (cursor) {
+          images.push(cursor.value)
+          cursor.continue()
+        } else {
+          resolve(images)
+        }
+      }
+
+      request.onerror = () => {
+        console.error('Error loading gallery:', request.error)
+        reject(request.error)
+      }
+    })
   } catch (error) {
     console.error('Error loading gallery:', error)
     return []
@@ -128,7 +142,7 @@ export async function getSavedImages() {
  */
 export async function saveImage(imageData, metadata = {}) {
   try {
-    await initStorage()
+    await initDB()
     
     const newImage = {
       id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
@@ -138,9 +152,17 @@ export async function saveImage(imageData, metadata = {}) {
       ...metadata
     }
 
-    const allImages = await getSavedImages()
-    allImages.unshift(newImage) // Add to beginning
-    await saveImages(allImages)
+    const transaction = db.transaction([STORE_NAME], 'readwrite')
+    const store = transaction.objectStore(STORE_NAME)
+    
+    await new Promise((resolve, reject) => {
+      const request = store.add(newImage)
+      request.onsuccess = () => resolve(newImage)
+      request.onerror = () => {
+        console.error('Error saving image:', request.error)
+        reject(new Error('Failed to save image to gallery'))
+      }
+    })
 
     return newImage
   } catch (error) {
@@ -154,16 +176,20 @@ export async function saveImage(imageData, metadata = {}) {
  */
 export async function deleteImage(imageId) {
   try {
-    await initStorage()
+    await initDB()
     
-    const allImages = await getSavedImages()
-    const filteredImages = allImages.filter(img => img.id !== imageId)
+    const transaction = db.transaction([STORE_NAME], 'readwrite')
+    const store = transaction.objectStore(STORE_NAME)
     
-    if (filteredImages.length === allImages.length) {
-      throw new Error('Image not found')
-    }
-    
-    await saveImages(filteredImages)
+    await new Promise((resolve, reject) => {
+      const request = store.delete(imageId)
+      request.onsuccess = () => resolve(true)
+      request.onerror = () => {
+        console.error('Error deleting image:', request.error)
+        reject(new Error('Failed to delete image from gallery'))
+      }
+    })
+
     return true
   } catch (error) {
     console.error('Error deleting image:', error)
@@ -176,8 +202,20 @@ export async function deleteImage(imageId) {
  */
 export async function clearGallery() {
   try {
-    await initStorage()
-    await saveImages([])
+    await initDB()
+    
+    const transaction = db.transaction([STORE_NAME], 'readwrite')
+    const store = transaction.objectStore(STORE_NAME)
+    
+    await new Promise((resolve, reject) => {
+      const request = store.clear()
+      request.onsuccess = () => resolve(true)
+      request.onerror = () => {
+        console.error('Error clearing gallery:', request.error)
+        reject(new Error('Failed to clear gallery'))
+      }
+    })
+
     return true
   } catch (error) {
     console.error('Error clearing gallery:', error)
