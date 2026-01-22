@@ -5,20 +5,27 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:backend": "node server/index.js",
+    "dev:all": "concurrently \"npm run dev:backend\" \"npm run dev\"",
     "build": "vite build",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@ffmpeg/core": "^0.12.10",
+    "@ffmpeg/ffmpeg": "^0.12.15",
+    "@ffmpeg/util": "^0.12.2",
+    "@monaco-editor/react": "^4.6.0",
+    "cors": "^2.8.6",
+    "express": "^4.22.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "@monaco-editor/react": "^4.6.0",
     "react-dropzone": "^14.2.3"
   },
   "devDependencies": {
     "@types/react": "^18.2.43",
     "@types/react-dom": "^18.2.17",
     "@vitejs/plugin-react": "^4.2.1",
+    "concurrently": "^8.2.2",
     "vite": "^5.0.8"
   }
 }
-

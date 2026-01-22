@@ -7,6 +7,7 @@ import Gallery from './components/Gallery'
 import Feed from './components/Feed'
 import Profile from './components/Profile'
 import PostModal from './components/PostModal'
+import VideoEditor from './components/VideoEditor'
 import { generateImage } from './services/api'
 import { saveImage, getImageCount } from './services/gallery'
 import { createPost, getPostCount } from './services/feed'
@@ -17,7 +18,7 @@ const DEFAULT_SETTINGS = {
 }
 
 function App() {
-  const [currentView, setCurrentView] = useState('generator') // 'generator', 'gallery', 'feed', or 'profile'
+  const [currentView, setCurrentView] = useState('generator') // 'generator', 'gallery', 'feed', 'profile', or 'video-editor'
   const [profileUsername, setProfileUsername] = useState(null)
   const [uploadedImages, setUploadedImages] = useState([])
   const [prompt, setPrompt] = useState('')
@@ -222,6 +223,15 @@ function App() {
           >
             Feed {postCount > 0 && `(${postCount})`}
           </button>
+          <button
+            className={`nav-tab ${currentView === 'video-editor' ? 'active' : ''}`}
+            onClick={() => {
+              setCurrentView('video-editor')
+              setProfileUsername(null)
+            }}
+          >
+            Video Editor
+          </button>
         </div>
 
         <div className="api-key-section">
@@ -315,6 +325,10 @@ function App() {
               username={profileUsername}
               onBack={handleBackFromProfile}
             />
+          </div>
+        ) : currentView === 'video-editor' ? (
+          <div className="video-editor-view">
+            <VideoEditor />
           </div>
         ) : null}
 

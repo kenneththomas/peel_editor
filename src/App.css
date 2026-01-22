@@ -60,7 +60,8 @@
 
 .gallery-view,
 .feed-view,
-.profile-view {
+.profile-view,
+.video-editor-view {
   display: flex;
   flex-direction: column;
   gap: 20px;
