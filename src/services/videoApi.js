@@ -49,6 +49,31 @@ export async function deleteVideo(filePath) {
   }
 }
 
+// Stitch videos together
+export async function stitchVideos(filePaths) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/videos/stitch`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ filePaths }),
+    })
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.error || 'Failed to stitch videos')
+    }
+
+    // Return the blob for the stitched video
+    const blob = await response.blob()
+    return blob
+  } catch (error) {
+    console.error('Error stitching videos:', error)
+    throw error
+  }
+}
+
 // Health check
 export async function checkHealth() {
   try {

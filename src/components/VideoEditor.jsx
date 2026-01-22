@@ -7,7 +7,7 @@ import {
   searchVideosByTags,
   removeVideoTags 
 } from '../services/video'
-import { listVideos, deleteVideo, checkHealth } from '../services/videoApi'
+import { listVideos, deleteVideo, checkHealth, stitchVideos } from '../services/videoApi'
 import './VideoEditor.css'
 
 // Supported video formats
@@ -26,6 +26,7 @@ function VideoEditor() {
   const [stitchMode, setStitchMode] = useState(false)
   const [selectedForStitch, setSelectedForStitch] = useState([])
   const [stitching, setStitching] = useState(false)
+  const [stitchProgress, setStitchProgress] = useState('')
   const [stitchPreview, setStitchPreview] = useState(null) // Preview blob URL
   const [useBackend, setUseBackend] = useState(false)
   const [backendAvailable, setBackendAvailable] = useState(false)
@@ -222,73 +223,42 @@ function VideoEditor() {
       return
     }
 
+    // Check if backend is available
+    if (!backendAvailable) {
+      alert('Backend server is required for video stitching. Please start the backend server.')
+      return
+    }
+
+    // Check if videos have fullPath (required for server-side stitching)
+    const videosWithoutPath = selectedForStitch.filter(v => !v.fullPath)
+    if (videosWithoutPath.length > 0) {
+      alert('All selected videos must be loaded from the backend. Please use "Load from Backend" to load videos.')
+      return
+    }
+
     setStitching(true)
+    setStitchProgress('Preparing to stitch videos...')
     try {
-      // Dynamically import ffmpeg.wasm
-      const { FFmpeg } = await import('@ffmpeg/ffmpeg')
-      const { fetchFile, toBlobURL } = await import('@ffmpeg/util')
+      // Get file paths in order
+      const filePaths = selectedForStitch.map(video => video.fullPath)
       
-      const ffmpeg = new FFmpeg()
-      ffmpeg.on('log', ({ message }) => {
-        console.log(message)
-      })
-
-      // Load FFmpeg
-      const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd'
-      await ffmpeg.load({
-        coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-        wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-      })
-
-      // Write all video files to FFmpeg's virtual file system
-      // Order is preserved based on selection order
-      for (let i = 0; i < selectedForStitch.length; i++) {
-        const video = selectedForStitch[i]
-        let data
-        if (video.file) {
-          // Browser mode - use file directly
-          data = await fetchFile(video.file)
-        } else if (video.url) {
-          // Backend mode - fetch from URL
-          data = await fetchFile(video.url)
-        } else {
-          throw new Error(`Cannot access video file for ${video.name}`)
-        }
-        await ffmpeg.writeFile(`input${i}.mp4`, data)
-      }
-
-      // Create concat file (order is preserved from selectedForStitch array)
-      const concatContent = selectedForStitch
-        .map((_, i) => `file 'input${i}.mp4'`)
-        .join('\n')
-      await ffmpeg.writeFile('concat.txt', concatContent)
-
-      // Run FFmpeg to concatenate videos
-      await ffmpeg.exec([
-        '-f', 'concat',
-        '-safe', '0',
-        '-i', 'concat.txt',
-        '-c', 'copy',
-        'output.mp4'
-      ])
-
-      // Read the output file
-      const data = await ffmpeg.readFile('output.mp4')
-
+      setStitchProgress('Stitching videos on server (this may take a while)...')
+      console.log('Sending stitch request to server with', filePaths.length, 'videos')
+      
+      // Call server-side stitching API
+      const blob = await stitchVideos(filePaths)
+      
+      setStitchProgress('Creating preview...')
       // Create preview blob URL
-      const blob = new Blob([data.buffer], { type: 'video/mp4' })
       const previewUrl = URL.createObjectURL(blob)
       setStitchPreview(previewUrl)
-
-      // Cleanup FFmpeg files (but keep the blob for preview)
-      await ffmpeg.deleteFile('concat.txt')
-      for (let i = 0; i < selectedForStitch.length; i++) {
-        await ffmpeg.deleteFile(`input${i}.mp4`)
-      }
-      await ffmpeg.deleteFile('output.mp4')
+      
+      setStitchProgress('')
+      console.log('Video stitching completed successfully')
     } catch (error) {
       console.error('Error stitching videos:', error)
-      alert('Failed to stitch videos: ' + error.message)
+      setStitchProgress('')
+      alert('Failed to stitch videos: ' + error.message + '\n\nMake sure FFmpeg is installed on your system and the backend server is running.')
     } finally {
       setStitching(false)
     }
@@ -316,6 +286,7 @@ function VideoEditor() {
     }
     setStitchMode(false)
     setSelectedForStitch([])
+    setStitchProgress('')
   }
 
   const getVideoTags = (video) => {
@@ -327,7 +298,7 @@ function VideoEditor() {
       <div className="video-editor-header">
         <h2>Video Editor</h2>
         <div className="video-editor-controls">
-          {backendAvailable && (
+          {backendAvailable ? (
             <div className="folder-path-input-group">
               <input
                 type="text"
@@ -346,22 +317,14 @@ function VideoEditor() {
                 onClick={handleLoadFromBackend}
                 disabled={loading || !folderPath.trim()}
               >
-                {loading ? 'Loading...' : 'Load from Backend'}
+                {loading ? 'Loading...' : 'Load Videos'}
               </button>
             </div>
+          ) : (
+            <div className="backend-warning">
+              <p>Backend server is required. Please start the server to use video editing features.</p>
+            </div>
           )}
-          <input
-            type="file"
-            id="folder-select"
-            webkitdirectory=""
-            directory=""
-            multiple
-            onChange={handleFolderSelect}
-            style={{ display: 'none' }}
-          />
-          <label htmlFor="folder-select" className="folder-select-button">
-            Select Folder (Browser)
-          </label>
           {selectedFolder && (
             <span className="selected-folder">{selectedFolder}</span>
           )}
@@ -441,7 +404,7 @@ function VideoEditor() {
             onClick={handleStitchVideos}
             disabled={stitching || selectedForStitch.length < 2}
           >
-            {stitching ? 'Creating Preview...' : `Create Preview (${selectedForStitch.length} videos)`}
+            {stitching ? (stitchProgress || 'Creating Preview...') : `Create Preview (${selectedForStitch.length} videos)`}
           </button>
         </div>
       )}
@@ -451,12 +414,12 @@ function VideoEditor() {
           <p>No videos loaded</p>
           <p className="video-editor-empty-hint">
             {backendAvailable 
-              ? 'Enter a folder path and click "Load from Backend" or use "Select Folder (Browser)" to browse'
-              : 'Click "Select Folder (Browser)" to browse for video files'}
+              ? 'Enter a folder path and click "Load Videos" to load videos from your computer'
+              : 'Backend server is required. Please start the server to load videos.'}
           </p>
           {!backendAvailable && (
             <p className="video-editor-empty-hint" style={{ color: '#999', fontSize: '12px', marginTop: '10px' }}>
-              Backend server not available. Start the server to enable file deletion and folder path loading.
+              Start the backend server with: <code>npm run dev:backend</code>
             </p>
           )}
         </div>

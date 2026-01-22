@@ -7,6 +7,13 @@ export default defineConfig({
     host: true, // Allow access from other devices on local network
     port: 3000,
     open: true
+  },
+  optimizeDeps: {
+    exclude: [
+      '@ffmpeg/ffmpeg',
+      '@ffmpeg/util',
+      '@ffmpeg/core'
+    ]
   }
 })
 
