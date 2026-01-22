@@ -35,6 +35,8 @@ function VideoEditor() {
   const [useBackend, setUseBackend] = useState(false)
   const [backendAvailable, setBackendAvailable] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [videosDeleted, setVideosDeleted] = useState(0)
+  const [spaceFreed, setSpaceFreed] = useState(0)
   const videoRefs = useRef({})
   const stitchPreviewRef = useRef(null)
   const playlistVideoRef = useRef(null)
@@ -112,6 +114,8 @@ function VideoEditor() {
     setSelectedForStitch([])
     setSelectedForPlaylist([])
     setUseBackend(false)
+    setVideosDeleted(0)
+    setSpaceFreed(0)
   }
 
   const handleLoadFromBackend = async () => {
@@ -141,6 +145,8 @@ function VideoEditor() {
       setSelectedForStitch([])
       setSelectedForPlaylist([])
       setUseBackend(true)
+      setVideosDeleted(0)
+      setSpaceFreed(0)
     } catch (error) {
       console.error('Error loading videos:', error)
       alert('Failed to load videos: ' + error.message)
@@ -172,6 +178,12 @@ function VideoEditor() {
           if (video.url && video.url.startsWith('blob:')) {
             URL.revokeObjectURL(video.url)
           }
+        }
+        
+        // Update counters
+        setVideosDeleted(prev => prev + 1)
+        if (video.size) {
+          setSpaceFreed(prev => prev + video.size)
         }
         
         // Remove tags
@@ -350,10 +362,27 @@ function VideoEditor() {
     return getVideoTag(video.path)
   }
 
+  const formatBytes = (bytes) => {
+    if (bytes === 0) return '0 B'
+    const k = 1024
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i]
+  }
+
   return (
     <div className="video-editor-container">
       <div className="video-editor-header">
         <h2>Video Editor</h2>
+        {(videosDeleted > 0 || spaceFreed > 0) && (
+          <div className="deletion-counter">
+            <span className="counter-label">Deleted:</span>
+            <span className="counter-value">{videosDeleted} video{videosDeleted !== 1 ? 's' : ''}</span>
+            <span className="counter-separator">•</span>
+            <span className="counter-label">Space freed:</span>
+            <span className="counter-value">{formatBytes(spaceFreed)}</span>
+          </div>
+        )}
         <div className="video-editor-controls">
           {backendAvailable ? (
             <div className="folder-path-input-group">
