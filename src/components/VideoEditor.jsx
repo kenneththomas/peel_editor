@@ -28,11 +28,16 @@ function VideoEditor() {
   const [stitching, setStitching] = useState(false)
   const [stitchProgress, setStitchProgress] = useState('')
   const [stitchPreview, setStitchPreview] = useState(null) // Preview blob URL
+  const [playlistMode, setPlaylistMode] = useState(false)
+  const [selectedForPlaylist, setSelectedForPlaylist] = useState([])
+  const [showPlaylistPlayer, setShowPlaylistPlayer] = useState(false)
+  const [currentPlaylistIndex, setCurrentPlaylistIndex] = useState(0)
   const [useBackend, setUseBackend] = useState(false)
   const [backendAvailable, setBackendAvailable] = useState(false)
   const [loading, setLoading] = useState(false)
   const videoRefs = useRef({})
   const stitchPreviewRef = useRef(null)
+  const playlistVideoRef = useRef(null)
   const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001'
 
   useEffect(() => {
@@ -105,6 +110,7 @@ function VideoEditor() {
     setSearchQuery('')
     setSelectedTags([])
     setSelectedForStitch([])
+    setSelectedForPlaylist([])
     setUseBackend(false)
   }
 
@@ -133,6 +139,7 @@ function VideoEditor() {
       setSearchQuery('')
       setSelectedTags([])
       setSelectedForStitch([])
+      setSelectedForPlaylist([])
       setUseBackend(true)
     } catch (error) {
       console.error('Error loading videos:', error)
@@ -145,6 +152,8 @@ function VideoEditor() {
   const handleVideoClick = (video) => {
     if (stitchMode) {
       toggleStitchSelection(video)
+    } else if (playlistMode) {
+      togglePlaylistSelection(video)
     } else {
       setSelectedVideo(video)
     }
@@ -176,6 +185,7 @@ function VideoEditor() {
         }
         
         setSelectedForStitch(prev => prev.filter(v => v.path !== video.path))
+        setSelectedForPlaylist(prev => prev.filter(v => v.path !== video.path))
         
         if (!useBackend) {
           alert('Video removed from view. Note: Actual file deletion requires backend mode.')
@@ -216,6 +226,53 @@ function VideoEditor() {
       }
     })
   }
+
+  const togglePlaylistSelection = (video) => {
+    setSelectedForPlaylist(prev => {
+      const exists = prev.find(v => v.path === video.path)
+      if (exists) {
+        return prev.filter(v => v.path !== video.path)
+      } else {
+        return [...prev, video]
+      }
+    })
+  }
+
+  const handlePlayPlaylist = () => {
+    if (selectedForPlaylist.length === 0) {
+      alert('Please select at least one video for the playlist')
+      return
+    }
+    setCurrentPlaylistIndex(0)
+    setShowPlaylistPlayer(true)
+  }
+
+  const handlePlaylistVideoEnded = () => {
+    // Move to next video in playlist
+    setCurrentPlaylistIndex(prev => {
+      const nextIndex = (prev + 1) % selectedForPlaylist.length
+      return nextIndex
+    })
+  }
+
+  const handleClosePlaylistPlayer = () => {
+    setShowPlaylistPlayer(false)
+    setCurrentPlaylistIndex(0)
+    if (playlistVideoRef.current) {
+      playlistVideoRef.current.pause()
+      playlistVideoRef.current.currentTime = 0
+    }
+  }
+
+  // Effect to handle video source change when playlist index changes
+  useEffect(() => {
+    if (showPlaylistPlayer && playlistVideoRef.current && selectedForPlaylist.length > 0) {
+      playlistVideoRef.current.load()
+      playlistVideoRef.current.play().catch(err => {
+        console.error('Error playing video:', err)
+      })
+    }
+  }, [currentPlaylistIndex, showPlaylistPlayer, selectedForPlaylist])
 
   const handleStitchVideos = async () => {
     if (selectedForStitch.length < 2) {
@@ -329,16 +386,32 @@ function VideoEditor() {
             <span className="selected-folder">{selectedFolder}</span>
           )}
           {videos.length > 0 && (
-            <button
-              className={`stitch-mode-button ${stitchMode ? 'active' : ''}`}
-              onClick={() => {
-                setStitchMode(!stitchMode)
-                setSelectedForStitch([])
-                setSelectedVideo(null)
-              }}
-            >
-              {stitchMode ? 'Exit Stitch Mode' : 'Stitch Videos'}
-            </button>
+            <>
+              <button
+                className={`stitch-mode-button ${stitchMode ? 'active' : ''}`}
+                onClick={() => {
+                  setStitchMode(!stitchMode)
+                  setSelectedForStitch([])
+                  setSelectedVideo(null)
+                  setPlaylistMode(false)
+                  setSelectedForPlaylist([])
+                }}
+              >
+                {stitchMode ? 'Exit Stitch Mode' : 'Stitch Videos'}
+              </button>
+              <button
+                className={`playlist-mode-button ${playlistMode ? 'active' : ''}`}
+                onClick={() => {
+                  setPlaylistMode(!playlistMode)
+                  setSelectedForPlaylist([])
+                  setSelectedVideo(null)
+                  setStitchMode(false)
+                  setSelectedForStitch([])
+                }}
+              >
+                {playlistMode ? 'Exit Playlist Mode' : 'Quick Playlist'}
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -409,6 +482,29 @@ function VideoEditor() {
         </div>
       )}
 
+      {playlistMode && selectedForPlaylist.length > 0 && (
+        <div className="playlist-panel">
+          <div className="playlist-info">
+            <div>
+              <strong>{selectedForPlaylist.length}</strong> video{selectedForPlaylist.length !== 1 ? 's' : ''} selected
+            </div>
+            {selectedForPlaylist.length > 0 && (
+              <div className="playlist-order-preview">
+                Order: {selectedForPlaylist.map((v, i) => (
+                  <span key={v.path} className="playlist-order-badge">{i + 1}</span>
+                ))}
+              </div>
+            )}
+          </div>
+          <button
+            className="playlist-play-button"
+            onClick={handlePlayPlaylist}
+          >
+            ▶ Play Playlist ({selectedForPlaylist.length} videos)
+          </button>
+        </div>
+      )}
+
       {videos.length === 0 ? (
         <div className="video-editor-empty">
           <p>No videos loaded</p>
@@ -441,13 +537,15 @@ function VideoEditor() {
           {filteredVideos.map((video) => {
             const isSelected = stitchMode 
               ? selectedForStitch.find(v => v.path === video.path)
+              : playlistMode
+              ? selectedForPlaylist.find(v => v.path === video.path)
               : selectedVideo?.path === video.path
             const videoTags = getVideoTags(video)
             
             return (
               <div
                 key={video.path}
-                className={`video-item ${isSelected ? 'selected' : ''} ${stitchMode && selectedForStitch.find(v => v.path === video.path) ? 'stitch-selected' : ''}`}
+                className={`video-item ${isSelected ? 'selected' : ''} ${stitchMode && selectedForStitch.find(v => v.path === video.path) ? 'stitch-selected' : ''} ${playlistMode && selectedForPlaylist.find(v => v.path === video.path) ? 'playlist-selected' : ''}`}
                 onClick={() => handleVideoClick(video)}
               >
                 <div className="video-item-player">
@@ -474,6 +572,11 @@ function VideoEditor() {
                   </div>
                   {stitchMode && selectedForStitch.find(v => v.path === video.path) && (
                     <div className="stitch-checkmark">✓</div>
+                  )}
+                  {playlistMode && selectedForPlaylist.find(v => v.path === video.path) && (
+                    <div className="playlist-checkmark">
+                      {selectedForPlaylist.findIndex(v => v.path === video.path) + 1}
+                    </div>
                   )}
                 </div>
                 <div className="video-item-info">
@@ -604,6 +707,58 @@ function VideoEditor() {
               >
                 Save Video
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPlaylistPlayer && selectedForPlaylist.length > 0 && (
+        <div className="video-modal-overlay" onClick={handleClosePlaylistPlayer}>
+          <div className="playlist-player-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="video-modal-header">
+              <h3>Quick Playlist ({currentPlaylistIndex + 1} / {selectedForPlaylist.length})</h3>
+              <button
+                className="video-modal-close"
+                onClick={handleClosePlaylistPlayer}
+                title="Close"
+              >
+                ×
+              </button>
+            </div>
+            <div className="playlist-player-content">
+              <div className="playlist-player-video">
+                <video
+                  ref={playlistVideoRef}
+                  src={selectedForPlaylist[currentPlaylistIndex]?.url}
+                  controls
+                  autoPlay
+                  onEnded={handlePlaylistVideoEnded}
+                  style={{ width: '100%', maxHeight: '70vh' }}
+                />
+              </div>
+              <div className="playlist-player-info">
+                <div className="playlist-current-video">
+                  <strong>Now Playing:</strong> {selectedForPlaylist[currentPlaylistIndex]?.name}
+                </div>
+                <div className="playlist-video-list">
+                  <strong>Playlist ({selectedForPlaylist.length} videos):</strong>
+                  <div className="playlist-video-items">
+                    {selectedForPlaylist.map((video, index) => (
+                      <div
+                        key={video.path}
+                        className={`playlist-video-item ${index === currentPlaylistIndex ? 'active' : ''}`}
+                        onClick={() => {
+                          setCurrentPlaylistIndex(index)
+                        }}
+                      >
+                        <span className="playlist-video-number">{index + 1}.</span>
+                        <span className="playlist-video-name">{video.name}</span>
+                        {index === currentPlaylistIndex && <span className="playlist-playing-indicator">▶</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
