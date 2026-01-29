@@ -541,10 +541,24 @@
 }
 
 .video-modal-player {
+  position: relative;
   margin-bottom: 20px;
   background: #000;
   border-radius: 8px;
   overflow: hidden;
+}
+
+.video-modal-player-overlay {
+  position: absolute;
+  top: 0;
+  right: 0;
+  padding: 8px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.video-modal-player:hover .video-modal-player-overlay {
+  opacity: 1;
 }
 
 .video-modal-tags {

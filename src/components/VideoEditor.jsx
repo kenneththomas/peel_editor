@@ -166,8 +166,14 @@ function VideoEditor() {
   }
 
   const handleDelete = async (video, e) => {
-    e.stopPropagation()
+    e?.stopPropagation?.()
     if (window.confirm(`Are you sure you want to delete "${video.name}"? This will permanently delete the file.`)) {
+      const wasSelected = selectedVideo?.path === video.path
+      const idx = filteredVideos.findIndex(v => v.path === video.path)
+      const nextVideo = wasSelected && idx >= 0
+        ? (filteredVideos[idx + 1] ?? filteredVideos[idx - 1] ?? null)
+        : null
+
       try {
         // If using backend and we have fullPath, delete via API
         if (useBackend && video.fullPath) {
@@ -192,8 +198,8 @@ function VideoEditor() {
         // Remove from videos list
         setVideos(prev => prev.filter(v => v.path !== video.path))
         
-        if (selectedVideo?.path === video.path) {
-          setSelectedVideo(null)
+        if (wasSelected) {
+          setSelectedVideo(nextVideo)
         }
         
         setSelectedForStitch(prev => prev.filter(v => v.path !== video.path))
@@ -285,6 +291,30 @@ function VideoEditor() {
       })
     }
   }, [currentPlaylistIndex, showPlaylistPlayer, selectedForPlaylist])
+
+  // Left/Right arrow keys when video modal is open: navigate previous/next
+  useEffect(() => {
+    if (!selectedVideo || stitchMode || filteredVideos.length === 0) return
+
+    const onKeyDown = (e) => {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+      const target = e.target
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return
+
+      e.preventDefault()
+      const idx = filteredVideos.findIndex(v => v.path === selectedVideo.path)
+      if (idx < 0) return
+
+      if (e.key === 'ArrowLeft' && idx > 0) {
+        setSelectedVideo(filteredVideos[idx - 1])
+      } else if (e.key === 'ArrowRight' && idx < filteredVideos.length - 1) {
+        setSelectedVideo(filteredVideos[idx + 1])
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [selectedVideo, stitchMode, filteredVideos])
 
   const handleStitchVideos = async () => {
     if (selectedForStitch.length < 2) {
@@ -648,6 +678,15 @@ function VideoEditor() {
                   autoPlay
                   style={{ width: '100%', maxHeight: '70vh' }}
                 />
+                <div className="video-modal-player-overlay">
+                  <button
+                    className="video-delete-button"
+                    onClick={(e) => handleDelete(selectedVideo, e)}
+                    title="Delete video"
+                  >
+                    ×
+                  </button>
+                </div>
               </div>
               <div className="video-modal-tags">
                 <div className="video-modal-tags-section">
