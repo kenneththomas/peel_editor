@@ -6,6 +6,22 @@ function SettingsPanel({ settings, onChange }) {
       <h2>Generation Settings</h2>
       
       <div className="settings-group">
+        <label htmlFor="use-lite-model">Model</label>
+        <label className="settings-checkbox-label">
+          <input
+            id="use-lite-model"
+            type="checkbox"
+            checked={settings.useLiteModel || false}
+            onChange={(e) => onChange({ ...settings, useLiteModel: e.target.checked })}
+          />
+          Use Nano Banana 2 Lite
+        </label>
+        <div className="settings-description">
+          Uses Gemini 3.1 Flash Lite Image for faster, lower-cost generations.
+        </div>
+      </div>
+
+      <div className="settings-group">
         <label htmlFor="seed">Seed (Optional)</label>
         <input
           id="seed"

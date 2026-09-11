@@ -15,6 +15,7 @@ import './App.css'
 
 const DEFAULT_SETTINGS = {
   seed: null,
+  useLiteModel: false,
 }
 
 function App() {
@@ -25,8 +26,8 @@ function App() {
   const [generatedImage, setGeneratedImage] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
-  const [apiKey, setApiKey] = useState(localStorage.getItem('apiKey') || '')
-  const [apiUrl, setApiUrl] = useState(localStorage.getItem('apiUrl') || '')
+  const [apiKey, setApiKey] = useState(localStorage.getItem('openRouterApiKey') || '')
+  const [apiUrl, setApiUrl] = useState(localStorage.getItem('openRouterApiUrl') || '')
   const [settings, setSettings] = useState(() => {
     const saved = localStorage.getItem('settings')
     return saved ? { ...DEFAULT_SETTINGS, ...JSON.parse(saved) } : DEFAULT_SETTINGS
@@ -82,7 +83,7 @@ function App() {
 
   const handleGenerate = async () => {
     if (!apiKey) {
-      setError('Please enter your API key')
+      setError('Please enter your OpenRouter API key')
       return
     }
 
@@ -118,13 +119,13 @@ function App() {
   const handleApiKeyChange = (e) => {
     const key = e.target.value
     setApiKey(key)
-    localStorage.setItem('apiKey', key)
+    localStorage.setItem('openRouterApiKey', key)
   }
 
   const handleApiUrlChange = (e) => {
     const url = e.target.value
     setApiUrl(url)
-    localStorage.setItem('apiUrl', url)
+    localStorage.setItem('openRouterApiUrl', url)
   }
 
   const handleSaveImage = async (imageData, imagePrompt) => {
@@ -191,7 +192,7 @@ function App() {
     <div className="app">
       <header className="app-header">
         <h1>Peel</h1>
-        <p className="subtitle">JSON-style Photo Generation with Google Nano Banana Pro</p>
+        <p className="subtitle">JSON-style Photo Generation with Nano Banana 2 via OpenRouter</p>
       </header>
 
       <div className="app-container">
@@ -236,13 +237,13 @@ function App() {
 
         <div className="api-key-section">
           <div className="api-key-row">
-            <label htmlFor="api-key">API Key:</label>
+            <label htmlFor="api-key">OpenRouter API Key:</label>
             <input
               id="api-key"
               type="password"
               value={apiKey}
               onChange={handleApiKeyChange}
-              placeholder="Enter your Google Nano Banana Pro API key"
+              placeholder="Enter your OpenRouter API key"
               className="api-key-input"
             />
           </div>
@@ -253,7 +254,7 @@ function App() {
               type="text"
               value={apiUrl}
               onChange={handleApiUrlChange}
-              placeholder="Leave empty for default endpoint"
+              placeholder="https://openrouter.ai/api/v1/images"
               className="api-key-input"
             />
           </div>
@@ -345,4 +346,3 @@ function App() {
 }
 
 export default App
-
