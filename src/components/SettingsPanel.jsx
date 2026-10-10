@@ -1,23 +1,57 @@
+import { useEffect, useState } from 'react'
 import './SettingsPanel.css'
 
+const DEFAULT_MODEL = 'bytedance-seed/seedream-5-0-flash'
+
 function SettingsPanel({ settings, onChange }) {
+  const [models, setModels] = useState([])
+
+  useEffect(() => {
+    let cancelled = false
+    const headers = {}
+    const apiKey = localStorage.getItem('openRouterApiKey')
+    if (apiKey) headers.Authorization = `Bearer ${apiKey}`
+
+    fetch('https://openrouter.ai/api/v1/images/models', { headers })
+      .then((response) => {
+        if (!response.ok) throw new Error('Could not load image models')
+        return response.json()
+      })
+      .then((result) => {
+        if (!cancelled) setModels(Array.isArray(result.data) ? result.data : [])
+      })
+      .catch(() => {
+        // The default remains selectable even when the model catalog is unavailable.
+      })
+
+    return () => { cancelled = true }
+  }, [])
+
+  const availableModels = [...models]
+  if (!availableModels.some((model) => model.id === (settings.model || DEFAULT_MODEL))) {
+    availableModels.unshift({ id: settings.model || DEFAULT_MODEL, name: 'Seedream 5.0 Flash (default)' })
+  }
+
   return (
     <div className="settings-panel">
       <h2>Generation Settings</h2>
-      
+
       <div className="settings-group">
-        <label htmlFor="use-lite-model">Model</label>
-        <label className="settings-checkbox-label">
-          <input
-            id="use-lite-model"
-            type="checkbox"
-            checked={settings.useLiteModel || false}
-            onChange={(e) => onChange({ ...settings, useLiteModel: e.target.checked })}
-          />
-          Use Nano Banana 2 Lite
-        </label>
+        <label htmlFor="image-model">Image model</label>
+        <select
+          id="image-model"
+          className="settings-select"
+          value={settings.model || DEFAULT_MODEL}
+          onChange={(event) => onChange({ ...settings, model: event.target.value })}
+        >
+          {availableModels.map((model) => (
+            <option key={model.id} value={model.id}>
+              {model.name || model.id} ({model.id})
+            </option>
+          ))}
+        </select>
         <div className="settings-description">
-          Uses Gemini 3.1 Flash Lite Image for faster, lower-cost generations.
+          Choose from OpenRouter’s available image generation models.
         </div>
       </div>
 
@@ -26,8 +60,8 @@ function SettingsPanel({ settings, onChange }) {
         <input
           id="seed"
           type="number"
-          value={settings.seed || ''}
-          onChange={(e) => onChange({ ...settings, seed: e.target.value ? parseInt(e.target.value) : null })}
+          value={settings.seed ?? ''}
+          onChange={(e) => onChange({ ...settings, seed: e.target.value ? parseInt(e.target.value, 10) : null })}
           placeholder="Random"
           className="settings-input"
         />
@@ -37,11 +71,10 @@ function SettingsPanel({ settings, onChange }) {
       </div>
 
       <div className="settings-info">
-        <p><strong>Note:</strong> The API automatically determines resolution and other generation parameters based on your prompt. Additional settings will be added as they become available in the API.</p>
+        <p><strong>Note:</strong> Available generation parameters depend on the selected model.</p>
       </div>
     </div>
   )
 }
 
 export default SettingsPanel
-

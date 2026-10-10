@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useEffect } from 'react'
 import { useDropzone } from 'react-dropzone'
 import './ImageUpload.css'
 
@@ -26,20 +26,30 @@ function ImageUpload({ onImageUpload, uploadedImages, onClear }) {
     multiple: true
   })
 
-  const handlePaste = useCallback((e) => {
-    const items = e.clipboardData?.items
-    if (items) {
+  useEffect(() => {
+    const handlePaste = (event) => {
+      const clipboardFiles = Array.from(event.clipboardData?.files || [])
+      const itemFiles = Array.from(event.clipboardData?.items || [])
+        .filter((item) => item.type.startsWith('image/'))
+        .map((item) => item.getAsFile())
+        .filter(Boolean)
+      const imageFiles = (clipboardFiles.length > 0 ? clipboardFiles : itemFiles)
+        .filter((file) => file.type.startsWith('image/'))
+      if (imageFiles.length === 0) return
+
+      event.preventDefault()
       let imageIndex = uploadedImages?.length || 0
-      if (imageIndex >= 2) return // Already have 2 images
-      
-      for (let i = 0; i < items.length && imageIndex < 2; i++) {
-        if (items[i].type.indexOf('image') !== -1) {
-          const blob = items[i].getAsFile()
-          onImageUpload(blob, imageIndex)
-          imageIndex++
-        }
+      for (const file of imageFiles) {
+        if (imageIndex >= 2) break
+        onImageUpload(file, imageIndex)
+        imageIndex += 1
       }
     }
+
+    // Listen on the document so pasting works even when the dropzone itself
+    // does not have keyboard focus (for example after copying a screenshot).
+    document.addEventListener('paste', handlePaste)
+    return () => document.removeEventListener('paste', handlePaste)
   }, [onImageUpload, uploadedImages])
 
   const hasImages = uploadedImages && uploadedImages.length > 0
@@ -51,7 +61,6 @@ function ImageUpload({ onImageUpload, uploadedImages, onClear }) {
       <div
         {...getRootProps()}
         className={`dropzone ${isDragActive ? 'active' : ''} ${hasTwoImages ? 'has-two-images' : ''}`}
-        onPaste={handlePaste}
       >
         <input {...getInputProps()} />
         {hasImages ? (

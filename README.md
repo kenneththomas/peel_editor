@@ -1,6 +1,6 @@
 # Peel - JSON Photo Generation UI
 
-A modern web UI frontend for Nano Banana 2 through OpenRouter, specializing in JSON-style photo generation with drag-and-drop image support.
+A modern web UI frontend for image generation through OpenRouter, specializing in JSON-style photo generation with drag-and-drop image support.
 
 ## Features
 
@@ -43,7 +43,7 @@ npm run build
 4. **Generate**: Click the "Generate Image" button
 5. **Download**: Save your generated image
 
-Enable **Use Nano Banana 2 Lite** in Generation Settings to switch a request to `google/gemini-3.1-flash-lite-image`.
+Generation defaults to `bytedance-seed/seedream-5-0-flash`. Select another available OpenRouter image generation model in Generation Settings.
 
 ## JSON Prompt Format
 
@@ -59,13 +59,13 @@ When your prompt starts with `{` or `[`, it will be treated as JSON and syntax-h
 
 ## API Configuration
 
-The default endpoint is OpenRouter's unified Image API (`https://openrouter.ai/api/v1/images`) and the default model is the stable Nano Banana 2 release (`google/gemini-3.1-flash-image`).
+The default endpoint is OpenRouter's unified Image API (`https://openrouter.ai/api/v1/images`) and the default model is `bytedance-seed/seedream-5-0-flash`. Generation Settings loads available image models from OpenRouter's image models catalog.
 
 You can override either value with Vite environment variables:
 
 ```bash
 VITE_OPENROUTER_API_URL=https://openrouter.ai/api/v1/images
-VITE_OPENROUTER_MODEL=google/gemini-3.1-flash-image
+VITE_OPENROUTER_MODEL=bytedance-seed/seedream-5-0-flash
 ```
 
 The optional endpoint field in the UI overrides `VITE_OPENROUTER_API_URL`. The OpenRouter API key is stored locally in the browser and sent as a Bearer token directly to OpenRouter.

@@ -15,7 +15,7 @@ import './App.css'
 
 const DEFAULT_SETTINGS = {
   seed: null,
-  useLiteModel: false,
+  model: import.meta.env.VITE_OPENROUTER_MODEL || 'bytedance-seed/seedream-5-0-flash',
 }
 
 function App() {
@@ -30,7 +30,14 @@ function App() {
   const [apiUrl, setApiUrl] = useState(localStorage.getItem('openRouterApiUrl') || '')
   const [settings, setSettings] = useState(() => {
     const saved = localStorage.getItem('settings')
-    return saved ? { ...DEFAULT_SETTINGS, ...JSON.parse(saved) } : DEFAULT_SETTINGS
+    if (!saved) return DEFAULT_SETTINGS
+    const parsed = JSON.parse(saved)
+    return {
+      ...DEFAULT_SETTINGS,
+      ...parsed,
+      // Migrate the old Lite checkbox to its corresponding model selection.
+      model: parsed.model || (parsed.useLiteModel ? 'google/gemini-3.1-flash-lite-image' : DEFAULT_SETTINGS.model),
+    }
   })
   const [galleryCount, setGalleryCount] = useState(0)
   const [postCount, setPostCount] = useState(0)
@@ -192,7 +199,7 @@ function App() {
     <div className="app">
       <header className="app-header">
         <h1>Peel</h1>
-        <p className="subtitle">JSON-style Photo Generation with Nano Banana 2 via OpenRouter</p>
+        <p className="subtitle">Image generation with OpenRouter</p>
       </header>
 
       <div className="app-container">

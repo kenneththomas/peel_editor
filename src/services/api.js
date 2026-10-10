@@ -3,8 +3,7 @@
  */
 
 const DEFAULT_ENDPOINT = 'https://openrouter.ai/api/v1/images'
-const DEFAULT_MODEL = 'google/gemini-3.1-flash-image'
-const LITE_MODEL = 'google/gemini-3.1-flash-lite-image'
+export const DEFAULT_MODEL = 'bytedance-seed/seedream-5-0-flash'
 
 function imageToDataUrl(file) {
   return new Promise((resolve, reject) => {
@@ -22,9 +21,7 @@ function getErrorMessage(errorData, response) {
 
 export async function generateImage(apiKey, prompt, inputImages = null, settings = {}, customApiUrl = null) {
   const apiUrl = customApiUrl || import.meta.env.VITE_OPENROUTER_API_URL || DEFAULT_ENDPOINT
-  const model = settings.useLiteModel
-    ? LITE_MODEL
-    : (import.meta.env.VITE_OPENROUTER_MODEL || DEFAULT_MODEL)
+  const model = settings.model || import.meta.env.VITE_OPENROUTER_MODEL || DEFAULT_MODEL
 
   if (!apiKey) {
     throw new Error('OpenRouter API key is required')
