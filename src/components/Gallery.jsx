@@ -1,371 +1,91 @@
 import { useState, useEffect, useRef } from 'react'
-import { getSavedImages, deleteImage, clearGallery, saveImage } from '../services/gallery'
+import { getSavedImages, deleteImage, saveImage, updateImage, restoreImage } from '../services/gallery'
+import Dialog from './Dialog'
 import './Gallery.css'
 
-function Gallery({ onImageSelect, refreshTrigger, onImport, onNewPost }) {
+export default function Gallery({ refreshTrigger, onImport, onNewPost, onChange }) {
   const [images, setImages] = useState([])
-  const [selectedImage, setSelectedImage] = useState(null)
+  const [selected, setSelected] = useState(null)
+  const [query, setQuery] = useState('')
+  const [collection, setCollection] = useState('')
+  const [favorites, setFavorites] = useState(false)
+  const [sort, setSort] = useState('newest')
   const [loading, setLoading] = useState(true)
-  const [showUpload, setShowUpload] = useState(false)
-  const [uploadImage, setUploadImage] = useState(null)
-  const [uploadImagePreview, setUploadImagePreview] = useState(null)
-  const [uploadPrompt, setUploadPrompt] = useState('')
-  const [uploading, setUploading] = useState(false)
-  const fileInputRef = useRef(null)
-
+  const [error, setError] = useState('')
+  const [deleted, setDeleted] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [draft, setDraft] = useState({ title: '', tags: '', collection: '' })
+  const fileInput = useRef(null)
   useEffect(() => {
-    loadImages()
-  }, [refreshTrigger])
-
-  // Close modal on ESC key
-  useEffect(() => {
-    const handleEscape = (e) => {
-      if (e.key === 'Escape' && selectedImage) {
-        setSelectedImage(null)
-      }
-    }
-    window.addEventListener('keydown', handleEscape)
-    return () => window.removeEventListener('keydown', handleEscape)
-  }, [selectedImage])
-
-  const loadImages = async () => {
+    let cancelled = false
     setLoading(true)
+    getSavedImages().then(records => { if (!cancelled) { setImages(records); setError('') } })
+      .catch(err => { if (!cancelled) setError(err.message) }).finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [refreshTrigger])
+  const collections = [...new Set(images.map(image => image.collection).filter(Boolean))].sort()
+  const visible = images.filter(image => (!favorites || image.favorite) && (!collection || image.collection === collection) &&
+    [image.title, image.prompt, image.collection, ...(image.tags || [])].join(' ').toLowerCase().includes(query.toLowerCase()))
+    .sort((a, b) => sort === 'title' ? (a.title || a.prompt || '').localeCompare(b.title || b.prompt || '') : sort === 'oldest' ? a.timestamp.localeCompare(b.timestamp) : b.timestamp.localeCompare(a.timestamp))
+  function open(image) { setSelected(image); setDraft({ title: image.title || '', tags: (image.tags || []).join(', '), collection: image.collection || '' }) }
+  async function upload(files) {
+    if (!files.length) return
+    setBusy(true); setError('')
     try {
-      const savedImages = await getSavedImages()
-      setImages(savedImages)
-    } catch (error) {
-      console.error('Error loading images:', error)
-      setImages([])
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleDelete = async (imageId, e) => {
-    e.stopPropagation()
-    if (window.confirm('Are you sure you want to delete this image?')) {
-      try {
-        await deleteImage(imageId)
-        await loadImages()
-        if (selectedImage?.id === imageId) {
-          setSelectedImage(null)
-        }
-      } catch (error) {
-        console.error('Error deleting image:', error)
-        alert('Failed to delete image')
+      for (const file of files) {
+        if (!file.type.startsWith('image/')) throw new Error('Choose image files')
+        const url = URL.createObjectURL(file)
+        try { await saveImage(url, { title: file.name, collection }) } finally { URL.revokeObjectURL(url) }
       }
-    }
+      onChange()
+    } catch (err) { setError(err.message); onChange() } finally { setBusy(false); if (fileInput.current) fileInput.current.value = '' }
   }
-
-  const handleClearAll = async () => {
-    if (window.confirm('Are you sure you want to clear all images? This cannot be undone.')) {
-      try {
-        await clearGallery()
-        await loadImages()
-        setSelectedImage(null)
-      } catch (error) {
-        console.error('Error clearing gallery:', error)
-        alert('Failed to clear gallery')
-      }
-    }
+  async function toggleFavorite(image) {
+    try { await updateImage(image.id, { favorite: !image.favorite }); onChange(); if (selected?.id === image.id) setSelected({ ...image, favorite: !image.favorite }) }
+    catch (err) { setError(err.message) }
   }
-
-  const handleImageClick = (image) => {
-    setSelectedImage(image)
-  }
-
-  const handleImport = () => {
-    if (selectedImage && onImport) {
-      onImport(selectedImage)
-      setSelectedImage(null)
-    }
-  }
-
-  const handleCloseModal = (e) => {
-    // Close modal when clicking the backdrop
-    if (e.target === e.currentTarget) {
-      setSelectedImage(null)
-    }
-  }
-
-  const formatDate = (timestamp) => {
-    const date = new Date(timestamp)
-    return date.toLocaleString()
-  }
-
-  const handleFileSelect = (e) => {
-    const file = e.target.files?.[0]
-    if (file && file.type.startsWith('image/')) {
-      setUploadImage(file)
-      const reader = new FileReader()
-      reader.onload = (event) => {
-        setUploadImagePreview(event.target.result)
-      }
-      reader.readAsDataURL(file)
-      setShowUpload(true)
-    }
-  }
-
-  const handleImageDrop = (e) => {
-    e.preventDefault()
-    const file = e.dataTransfer.files?.[0]
-    if (file && file.type.startsWith('image/')) {
-      setUploadImage(file)
-      const reader = new FileReader()
-      reader.onload = (event) => {
-        setUploadImagePreview(event.target.result)
-      }
-      reader.readAsDataURL(file)
-      setShowUpload(true)
-    }
-  }
-
-  const handleDragOver = (e) => {
-    e.preventDefault()
-  }
-
-  const handleClearUpload = () => {
-    setUploadImage(null)
-    setUploadImagePreview(null)
-    setUploadPrompt('')
-    setShowUpload(false)
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ''
-    }
-  }
-
-  const handleSaveImage = async (e) => {
-    e.preventDefault()
-    
-    if (!uploadImage || !uploadImagePreview) {
-      alert('Please select an image')
-      return
-    }
-
-    setUploading(true)
+  async function saveDetails(event) {
+    event.preventDefault(); setBusy(true)
     try {
-      await saveImage(uploadImagePreview, { prompt: uploadPrompt.trim() })
-      
-      // Reset form and reload images
-      handleClearUpload()
-      await loadImages()
-      
-      // Notify parent component to update count
-      if (refreshTrigger !== undefined) {
-        // The parent will handle the refresh via refreshTrigger prop
-      }
-    } catch (error) {
-      console.error('Error saving image:', error)
-      alert('Failed to save image: ' + error.message)
-    } finally {
-      setUploading(false)
-    }
+      const changes = { title: draft.title.trim(), collection: draft.collection.trim(), tags: [...new Set(draft.tags.split(',').map(tag => tag.trim()).filter(Boolean))] }
+      await updateImage(selected.id, changes); setSelected({ ...selected, ...changes }); onChange()
+    } catch (err) { setError(err.message) } finally { setBusy(false) }
   }
-
-  if (loading) {
-    return (
-      <div className="gallery-container">
-        <div className="gallery-header">
-          <h2>Gallery</h2>
-        </div>
-        <div className="gallery-empty">
-          <p>Loading gallery...</p>
-        </div>
-      </div>
-    )
+  async function remove(image) {
+    try { await deleteImage(image.id); setDeleted(image); setSelected(null); onChange() } catch (err) { setError(err.message) }
   }
-
-  return (
-    <div className="gallery-container">
-      <div className="gallery-header">
-        <h2>Gallery {images.length > 0 && `(${images.length})`}</h2>
-        {images.length > 0 && (
-          <button onClick={handleClearAll} className="clear-all-button">
-            Clear All
-          </button>
-        )}
-      </div>
-      
-      {/* Upload Section */}
-      <div className="gallery-upload-section">
-        {!showUpload ? (
-          <div
-            className="gallery-upload-dropzone"
-            onDrop={handleImageDrop}
-            onDragOver={handleDragOver}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleFileSelect}
-              style={{ display: 'none' }}
-            />
-            <div className="gallery-upload-dropzone-content">
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                <polyline points="17 8 12 3 7 8"></polyline>
-                <line x1="12" y1="3" x2="12" y2="15"></line>
-              </svg>
-              <p className="gallery-upload-text">Click to upload or drag and drop an image</p>
-              <p className="gallery-upload-hint">Add an image to your gallery</p>
-            </div>
-          </div>
-        ) : (
-          <form className="gallery-upload-form" onSubmit={handleSaveImage}>
-            <div className="gallery-upload-preview-section">
-              <div className="gallery-upload-image-preview">
-                <img src={uploadImagePreview} alt="Preview" />
-                <button
-                  type="button"
-                  onClick={handleClearUpload}
-                  className="gallery-upload-remove"
-                  title="Remove image"
-                >
-                  ×
-                </button>
-              </div>
-            </div>
-            
-            <div className="gallery-upload-fields">
-              <div className="gallery-upload-field">
-                <label htmlFor="gallery-prompt">Prompt / Description (optional)</label>
-                <textarea
-                  id="gallery-prompt"
-                  value={uploadPrompt}
-                  onChange={(e) => setUploadPrompt(e.target.value)}
-                  placeholder="Enter a prompt or description for this image..."
-                  rows="3"
-                  disabled={uploading}
-                />
-              </div>
-            </div>
-            
-            <div className="gallery-upload-actions">
-              <button
-                type="button"
-                onClick={handleClearUpload}
-                className="gallery-upload-cancel"
-                disabled={uploading}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="gallery-upload-submit"
-                disabled={uploading}
-              >
-                {uploading ? 'Saving...' : 'Save to Gallery'}
-              </button>
-            </div>
-          </form>
-        )}
-      </div>
-
-      {images.length === 0 ? (
-        <div className="gallery-empty">
-          <p>No saved images yet</p>
-          <p className="gallery-empty-hint">Upload an image above to add it to your gallery</p>
-        </div>
-      ) : (
-        <div className="gallery-content">
-          <div className="gallery-grid">
-            {images.map((image) => (
-              <div
-                key={image.id}
-                className={`gallery-item ${selectedImage?.id === image.id ? 'selected' : ''}`}
-                onClick={() => handleImageClick(image)}
-              >
-                <div className="gallery-item-image">
-                  <img src={image.imageUrl} alt={image.prompt || 'Saved image'} />
-                </div>
-                <div className="gallery-item-overlay">
-                  <button
-                    className="gallery-delete-button"
-                    onClick={(e) => handleDelete(image.id, e)}
-                    title="Delete image"
-                  >
-                    ×
-                  </button>
-                </div>
-                {image.prompt && (
-                  <div className="gallery-item-prompt">
-                    {image.prompt.length > 50 
-                      ? image.prompt.substring(0, 50) + '...' 
-                      : image.prompt}
-                  </div>
-                )}
-                <div className="gallery-item-date">
-                  {formatDate(image.timestamp)}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {selectedImage && (
-        <div className="gallery-modal-overlay" onClick={handleCloseModal}>
-          <div className="gallery-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="gallery-modal-header">
-              <h3>Image Details</h3>
-              <button
-                className="gallery-modal-close"
-                onClick={() => setSelectedImage(null)}
-                title="Close"
-              >
-                ×
-              </button>
-            </div>
-            <div className="gallery-modal-content">
-              <div className="gallery-modal-image">
-                <img src={selectedImage.imageUrl} alt={selectedImage.prompt || 'Saved image'} />
-              </div>
-              {selectedImage.prompt && (
-                <div className="gallery-modal-prompt">
-                  <strong>Prompt:</strong>
-                  <div className="gallery-modal-prompt-text">{selectedImage.prompt}</div>
-                </div>
-              )}
-              <div className="gallery-modal-meta">
-                <p><strong>Saved:</strong> {formatDate(selectedImage.timestamp)}</p>
-              </div>
-            </div>
-            <div className="gallery-modal-actions">
-              {onNewPost && (
-                <button
-                  onClick={() => {
-                    onNewPost(selectedImage)
-                    setSelectedImage(null)
-                  }}
-                  className="new-post-button"
-                >
-                  New Post
-                </button>
-              )}
-              {onImport && (
-                <button
-                  onClick={handleImport}
-                  className="import-button"
-                >
-                  Import to Input Images
-                </button>
-              )}
-              <a
-                href={selectedImage.imageUrl}
-                download={`image-${selectedImage.id}.png`}
-                className="download-button"
-              >
-                Download
-              </a>
-            </div>
-          </div>
-        </div>
-      )}
+  async function undo() {
+    try { await restoreImage(deleted); setDeleted(null); onChange() } catch (err) { setError(err.message) }
+  }
+  return <main className="gallery-container library">
+    <div className="gallery-header"><div><span className="eyebrow">KEEP THE GOOD ONES</span><h2>Your library</h2><p className="muted">{images.length} images · Stored in this browser</p></div>
+      <button disabled={busy} onClick={() => fileInput.current.click()} className="save-button">{busy ? 'Saving…' : 'Add images'}</button>
+      <input ref={fileInput} type="file" accept="image/*" multiple hidden onChange={event => upload(Array.from(event.target.files))} />
     </div>
-  )
+    {error && <div className="error-message" role="alert">{error}</div>}
+    {deleted && <div className="undo-notice" role="status">Image removed from library.<button onClick={undo}>Undo</button><button aria-label="Dismiss undo" onClick={() => setDeleted(null)}>×</button></div>}
+    <div className="library-filters"><input aria-label="Search library" placeholder="Search prompts, titles, or tags…" value={query} onChange={e => setQuery(e.target.value)} />
+      <select aria-label="Filter collection" value={collection} onChange={e => setCollection(e.target.value)}><option value="">All collections</option>{collections.map(name => <option key={name}>{name}</option>)}</select>
+      <button aria-pressed={favorites} className={favorites ? 'active' : ''} onClick={() => setFavorites(value => !value)}>Favorites</button>
+      <select aria-label="Sort library" value={sort} onChange={e => setSort(e.target.value)}><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="title">Title A–Z</option></select>
+    </div>
+    <div className="library-drop-target" onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); upload(Array.from(event.dataTransfer.files)) }}>
+      {loading ? <p className="library-empty" role="status">Loading your library…</p> : !visible.length ? <div className="library-empty"><h3>{images.length ? 'No matching images' : 'A home for your favorite ideas.'}</h3><p>{images.length ? 'Try another search or collection.' : 'Save a generation or add images. Drop files here to import them.'}</p></div> :
+        <div className="gallery-grid">{visible.map(image => <article className="gallery-item" key={image.id}>
+          <button className="library-image-button" onClick={() => open(image)} aria-label={`Open ${image.title || image.prompt || 'image'}`}><img loading="lazy" src={image.imageUrl} alt={image.title || image.prompt || 'Saved image'} /></button>
+          <div className="library-card-info"><button onClick={() => open(image)} className="library-title">{image.title || image.prompt || 'Untitled image'}</button><button onClick={() => toggleFavorite(image)} aria-label={image.favorite ? 'Remove from favorites' : 'Add to favorites'} aria-pressed={Boolean(image.favorite)}>{image.favorite ? '★' : '☆'}</button></div>
+          <div className="library-card-meta"><span>{image.collection || 'Unsorted'}</span><span>{new Date(image.timestamp).toLocaleDateString()}</span></div>
+          {!!image.tags?.length && <div className="library-tags">{image.tags.map(tag => <button key={tag} onClick={() => setQuery(tag)}>{tag}</button>)}</div>}
+        </article>)}</div>}
+    </div>
+    {selected && <Dialog title="Image details" onClose={() => setSelected(null)}>
+      <img className="library-detail-image" src={selected.imageUrl} alt={selected.title || selected.prompt || 'Saved image'} />
+      <form onSubmit={saveDetails} className="library-detail-form"><label>Title<input value={draft.title} onChange={e => setDraft({ ...draft, title: e.target.value })} /></label>
+        <label>Collection<input list="collection-options" value={draft.collection} placeholder="e.g. Portrait studies" onChange={e => setDraft({ ...draft, collection: e.target.value })} /></label><datalist id="collection-options">{collections.map(name => <option key={name} value={name} />)}</datalist>
+        <label>Tags<input value={draft.tags} placeholder="film, coastal, soft light" onChange={e => setDraft({ ...draft, tags: e.target.value })} /></label><button disabled={busy} className="save-button">{busy ? 'Saving…' : 'Save details'}</button>
+      </form>
+      {selected.prompt && <details className="advanced-settings"><summary>Original prompt and settings</summary><p className="saved-prompt">{selected.prompt}</p><p className="muted">{selected.settings?.model || 'Imported image'} · Seed: {selected.settings?.seed ?? 'Random'}</p></details>}
+      <div className="image-actions"><button onClick={() => { onImport(selected); setSelected(null) }}>Use as reference</button><button onClick={() => { onNewPost(selected); setSelected(null) }}>New post</button><a className="download-button" href={selected.imageUrl} download={`peel-${selected.id}.png`}>Download</a><button className="danger-button" onClick={() => remove(selected)}>Remove</button></div>
+    </Dialog>}
+  </main>
 }
-
-export default Gallery
-

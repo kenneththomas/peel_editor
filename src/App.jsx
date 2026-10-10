@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import ImageUpload from './components/ImageUpload'
 import JSONEditor from './components/JSONEditor'
 import ImageDisplay from './components/ImageDisplay'
@@ -8,348 +8,196 @@ import Feed from './components/Feed'
 import Profile from './components/Profile'
 import PostModal from './components/PostModal'
 import VideoEditor from './components/VideoEditor'
+import Dialog from './components/Dialog'
+import GenerationHistory from './components/GenerationHistory'
 import { generateImage } from './services/api'
-import { saveImage, getImageCount } from './services/gallery'
+import { saveImage, getImageCount, getGenerations, saveGeneration, completeGeneration } from './services/gallery'
+import { createGeneration, parsePrompt } from './services/generation'
 import { createPost, getPostCount } from './services/feed'
 import './App.css'
+import './studio.css'
 
-const DEFAULT_SETTINGS = {
-  seed: null,
-  model: import.meta.env.VITE_OPENROUTER_MODEL || 'bytedance-seed/seedream-5-0-flash',
+const DEFAULT_SETTINGS = { seed: null, model: import.meta.env.VITE_OPENROUTER_MODEL || 'bytedance-seed/seedream-5-0-flash' }
+const views = ['generator', 'gallery', 'feed', 'video-editor']
+const readView = () => views.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'generator'
+function storedSettings() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('settings') || '{}')
+    return { ...DEFAULT_SETTINGS, ...saved, model: saved.model || (saved.useLiteModel ? 'google/gemini-3.1-flash-lite-image' : DEFAULT_SETTINGS.model) }
+  } catch { return DEFAULT_SETTINGS }
 }
 
 function App() {
-  const [currentView, setCurrentView] = useState('generator') // 'generator', 'gallery', 'feed', 'profile', or 'video-editor'
+  const [currentView, setCurrentView] = useState(readView)
+  const [videoVisited, setVideoVisited] = useState(readView() === 'video-editor')
   const [profileUsername, setProfileUsername] = useState(null)
   const [uploadedImages, setUploadedImages] = useState([])
   const [prompt, setPrompt] = useState('')
-  const [generatedImage, setGeneratedImage] = useState(null)
+  const [activeGeneration, setActiveGeneration] = useState(null)
+  const [history, setHistory] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
-  const [apiKey, setApiKey] = useState(localStorage.getItem('openRouterApiKey') || '')
-  const [apiUrl, setApiUrl] = useState(localStorage.getItem('openRouterApiUrl') || '')
-  const [settings, setSettings] = useState(() => {
-    const saved = localStorage.getItem('settings')
-    if (!saved) return DEFAULT_SETTINGS
-    const parsed = JSON.parse(saved)
-    return {
-      ...DEFAULT_SETTINGS,
-      ...parsed,
-      // Migrate the old Lite checkbox to its corresponding model selection.
-      model: parsed.model || (parsed.useLiteModel ? 'google/gemini-3.1-flash-lite-image' : DEFAULT_SETTINGS.model),
-    }
-  })
+  const [notice, setNotice] = useState('')
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem('openRouterApiKey') || '')
+  const [apiUrl, setApiUrl] = useState(() => localStorage.getItem('openRouterApiUrl') || '')
+  const [settings, setSettings] = useState(storedSettings)
+  const [showSettings, setShowSettings] = useState(false)
   const [galleryCount, setGalleryCount] = useState(0)
   const [postCount, setPostCount] = useState(0)
+  const [libraryVersion, setLibraryVersion] = useState(0)
   const [selectedImageForPost, setSelectedImageForPost] = useState(null)
+  const request = useRef(null)
+  const busy = useRef(false)
 
-  // Save settings to localStorage when they change
   useEffect(() => {
-    localStorage.setItem('settings', JSON.stringify(settings))
-  }, [settings])
-
-  // Update gallery and post counts when view changes
-  useEffect(() => {
-    const updateCounts = async () => {
-      const gallery = await getImageCount()
-      const posts = await getPostCount()
-      setGalleryCount(gallery)
-      setPostCount(posts)
-    }
-    updateCounts()
+    if (currentView === 'video-editor') setVideoVisited(true)
   }, [currentView])
+  useEffect(() => {
+    const change = () => { setCurrentView(readView()); setProfileUsername(null) }
+    window.addEventListener('hashchange', change)
+    getGenerations().then(setHistory).catch(err => setError(`History could not load: ${err.message}`))
+    return () => { window.removeEventListener('hashchange', change); request.current?.abort() }
+  }, [])
+  useEffect(() => {
+    try { localStorage.setItem('settings', JSON.stringify(settings)) }
+    catch { setError('Settings could not be saved. Check browser storage permissions.') }
+  }, [settings])
+  useEffect(() => {
+    Promise.all([getImageCount(), getPostCount()]).then(([images, posts]) => { setGalleryCount(images); setPostCount(posts) })
+      .catch(err => setError(`Library could not load: ${err.message}`))
+  }, [currentView, libraryVersion])
+  useEffect(() => {
+    if (!notice) return
+    const timer = setTimeout(() => setNotice(''), 5000)
+    return () => clearTimeout(timer)
+  }, [notice])
 
+  function navigate(view) { setProfileUsername(null); setCurrentView(view); location.hash = view }
+  function recordHistory(record) { setHistory(prev => [record, ...prev.filter(item => item.id !== record.id)]) }
   const handleImageUpload = (file, index) => {
+    const id = crypto.randomUUID()
+    setUploadedImages(prev => {
+      const images = [...prev]
+      images[index ?? images.length] = { id, file, preview: null }
+      return images.slice(0, 2)
+    })
     const reader = new FileReader()
-    reader.onload = (e) => {
-      setUploadedImages((prev) => {
-        const newImages = [...prev]
-        // If index is provided, use it; otherwise, find the first empty slot or append
-        const targetIndex = index !== undefined ? index : newImages.length
-        newImages[targetIndex] = {
-          file: file,
-          preview: e.target.result
-        }
-        return newImages.slice(0, 2) // Ensure we never have more than 2 images
-      })
-    }
+    reader.onload = () => setUploadedImages(prev => prev.map(image => image.id === id ? { ...image, preview: reader.result } : image))
+    reader.onerror = () => { setUploadedImages(prev => prev.filter(image => image.id !== id)); setError('Unable to read reference image') }
     reader.readAsDataURL(file)
   }
-
-  const handleClearImage = (index) => {
-    if (index === undefined) {
-      setUploadedImages([])
-    } else {
-      setUploadedImages((prev) => {
-        const newImages = [...prev]
-        newImages.splice(index, 1)
-        return newImages
-      })
-    }
-  }
-
   const handleGenerate = async () => {
-    if (!apiKey) {
-      setError('Please enter your OpenRouter API key')
-      return
-    }
-
-    if (!prompt.trim()) {
-      setError('Please enter a prompt')
-      return
-    }
-
-    setLoading(true)
-    setError(null)
-
+    if (busy.current) return
+    if (!apiKey) { setShowSettings(true); setError('Add an OpenRouter API key to generate images.'); return }
+    if (!prompt.trim()) return
+    if (uploadedImages.some(image => !image.preview)) { setError('Wait for reference images to finish loading.'); return }
+    let parsed
+    try { parsed = parsePrompt(prompt) } catch { setError('Correct the JSON prompt before generating.'); return }
+    const record = createGeneration(prompt, settings, uploadedImages)
+    busy.current = true
+    setLoading(true); setError(null)
+    request.current = new AbortController()
     try {
-      let parsedPrompt = prompt
-      // Try to parse as JSON if it looks like JSON
+      await saveGeneration(record)
+      recordHistory(record)
+      const result = await generateImage(apiKey, parsed, uploadedImages.map(image => image.file), record.settings, apiUrl, request.current.signal)
+      // Keep the result usable even if local storage is full or a remote image blocks downloading.
+      const completed = { ...record, status: 'completed', result }
+      setActiveGeneration(completed)
+      recordHistory(completed)
       try {
-        const jsonParsed = JSON.parse(prompt)
-        parsedPrompt = jsonParsed
-      } catch (e) {
-        // Not JSON, use as plain text
+        const persisted = await completeGeneration(record, result)
+        setActiveGeneration(persisted); recordHistory(persisted)
+      } catch (err) {
+        await saveGeneration({ ...record, status: 'completed', result }).catch(() => {})
+        setError(`Image generated, but its local copy could not be saved: ${err.message}. Download it now.`)
       }
-
-      const imageFiles = uploadedImages.map(img => img.file).filter(Boolean)
-      const result = await generateImage(apiKey, parsedPrompt, imageFiles.length > 0 ? imageFiles : null, settings, apiUrl)
-      setGeneratedImage(result)
     } catch (err) {
-      console.error('Generation error:', err)
-      setError(err.message || 'Failed to generate image')
-    } finally {
-      setLoading(false)
-    }
+      const failed = { ...record, status: err.name === 'AbortError' ? 'cancelled' : 'failed', error: err.name === 'AbortError' ? 'Request cancelled' : err.message }
+      recordHistory(failed)
+      await saveGeneration(failed).catch(() => {})
+      if (err.name !== 'AbortError') setError(err.message || 'Failed to generate image')
+    } finally { busy.current = false; setLoading(false); request.current = null }
   }
-
-  const handleApiKeyChange = (e) => {
-    const key = e.target.value
-    setApiKey(key)
-    localStorage.setItem('openRouterApiKey', key)
-  }
-
-  const handleApiUrlChange = (e) => {
-    const url = e.target.value
-    setApiUrl(url)
-    localStorage.setItem('openRouterApiUrl', url)
-  }
-
-  const handleSaveImage = async (imageData, imagePrompt) => {
+  const handleSaveImage = async () => {
+    if (!activeGeneration?.result) return
     try {
-      await saveImage(imageData, { prompt: imagePrompt })
-      const count = await getImageCount()
-      setGalleryCount(count)
-      alert('Image saved to gallery!')
-    } catch (error) {
-      console.error('Error saving image:', error)
-      alert('Failed to save image: ' + error.message)
-    }
+      await saveImage(activeGeneration.result, {
+        generationId: activeGeneration.id, prompt: activeGeneration.prompt, settings: activeGeneration.settings,
+        references: activeGeneration.references, timestamp: activeGeneration.timestamp,
+      })
+      setLibraryVersion(version => version + 1); setNotice('Saved to your library')
+    } catch (err) { setError(`Unable to save image: ${err.message}`) }
   }
-
-  const handleGalleryImageSelect = (image) => {
-    // This is called when clicking an image - modal is handled by Gallery component
-  }
-
-  const handleImportImage = async (image) => {
-    // Import image to input images
+  const handleImportImage = async image => {
     try {
-      // Convert image URL to File object
       const response = await fetch(image.imageUrl)
+      if (!response.ok) throw new Error('Image could not be loaded')
       const blob = await response.blob()
-      const file = new File([blob], `gallery-image-${image.id}.png`, { type: blob.type || 'image/png' })
-      
-      // Find the first available slot for the image
-      const nextIndex = uploadedImages.length < 2 ? uploadedImages.length : 0
-      handleImageUpload(file, nextIndex)
-      
-      // Switch to generator view
-      setCurrentView('generator')
-    } catch (error) {
-      console.error('Error importing image:', error)
-      alert('Failed to import image: ' + error.message)
-    }
+      handleImageUpload(new File([blob], `reference-${image.id}.png`, { type: blob.type }), uploadedImages.length < 2 ? uploadedImages.length : 0)
+      navigate('generator'); setNotice('Image added as a reference')
+    } catch (err) { setError(err.message) }
+  }
+  const restoreGeneration = async record => {
+    try {
+      const references = await Promise.all(record.references.map(async image => {
+        const blob = await (await fetch(image.preview)).blob()
+        return { file: new File([blob], image.name, { type: image.type }), preview: image.preview }
+      }))
+      setPrompt(record.prompt); setSettings(record.settings); setUploadedImages(references)
+      navigate('generator'); setNotice('Original inputs restored')
+    } catch (err) { setError(`Unable to restore inputs: ${err.message}`) }
+  }
+  const handleCreatePost = async (imageUrl, username, caption, tags = []) => {
+    await createPost(imageUrl, username, caption, tags)
+    setLibraryVersion(version => version + 1); setSelectedImageForPost(null); navigate('feed')
+  }
+  const changeCredential = (key, value, setter) => {
+    setter(value)
+    try { localStorage.setItem(key, value) } catch { setError('Connection settings could not be saved') }
   }
 
-  const handleNewPost = (image) => {
-    setSelectedImageForPost(image)
-  }
-
-  const handleCreatePost = async (imageUrl, username, caption, taggedUsernames = []) => {
-    await createPost(imageUrl, username, caption, taggedUsernames)
-    const count = await getPostCount()
-    setPostCount(count)
-    setSelectedImageForPost(null)
-    if (currentView !== 'feed') {
-      setCurrentView('feed')
-    }
-  }
-
-  const handleUsernameClick = (username) => {
-    setProfileUsername(username)
-    setCurrentView('profile')
-  }
-
-  const handleBackFromProfile = () => {
-    setProfileUsername(null)
-    setCurrentView('feed')
-  }
-
-  return (
-    <div className="app">
-      <header className="app-header">
-        <h1>Peel</h1>
-        <p className="subtitle">Image generation with OpenRouter</p>
-      </header>
-
-      <div className="app-container">
-        <div className="navigation-tabs">
-          <button
-            className={`nav-tab ${currentView === 'generator' ? 'active' : ''}`}
-            onClick={() => {
-              setCurrentView('generator')
-              setProfileUsername(null)
-            }}
-          >
-            Generator
-          </button>
-          <button
-            className={`nav-tab ${currentView === 'gallery' ? 'active' : ''}`}
-            onClick={() => {
-              setCurrentView('gallery')
-              setProfileUsername(null)
-            }}
-          >
-            Gallery {galleryCount > 0 && `(${galleryCount})`}
-          </button>
-          <button
-            className={`nav-tab ${currentView === 'feed' ? 'active' : ''}`}
-            onClick={() => {
-              setCurrentView('feed')
-              setProfileUsername(null)
-            }}
-          >
-            Feed {postCount > 0 && `(${postCount})`}
-          </button>
-          <button
-            className={`nav-tab ${currentView === 'video-editor' ? 'active' : ''}`}
-            onClick={() => {
-              setCurrentView('video-editor')
-              setProfileUsername(null)
-            }}
-          >
-            Video Editor
-          </button>
-        </div>
-
-        <div className="api-key-section">
-          <div className="api-key-row">
-            <label htmlFor="api-key">OpenRouter API Key:</label>
-            <input
-              id="api-key"
-              type="password"
-              value={apiKey}
-              onChange={handleApiKeyChange}
-              placeholder="Enter your OpenRouter API key"
-              className="api-key-input"
-            />
+  return <div className="app">
+    <header className="app-header">
+      <div className="brand"><span className="brand-symbol" aria-hidden="true">◒</span><h1>Peel</h1><span className="subtitle">Creative studio</span></div>
+      <button className="connection-button" onClick={() => setShowSettings(true)}><span className={`connection-dot ${apiKey ? 'ready' : ''}`} />{apiKey ? 'API key configured' : 'Connect OpenRouter'}<span>Settings</span></button>
+    </header>
+    <div className="app-container">
+      <nav className="navigation-tabs" aria-label="Workspace">
+        {views.map((view, index) => <button key={view} className={`nav-tab ${currentView === view ? 'active' : ''}`} aria-current={currentView === view ? 'page' : undefined} onClick={() => navigate(view)}>
+          {['Create', 'Library', 'Feed', 'Video'][index]}{view === 'gallery' && galleryCount > 0 && <span className="nav-count">{galleryCount}</span>}{view === 'feed' && postCount > 0 && <span className="nav-count">{postCount}</span>}
+        </button>)}
+      </nav>
+      {error && <div className="error-message" role="alert">{error}<button aria-label="Dismiss error" onClick={() => setError(null)}>×</button></div>}
+      {currentView === 'generator' && <main className="main-content">
+        <aside className="left-panel">
+          <div className="workspace-heading"><span className="eyebrow">YOUR NEXT IDEA</span><h2>Make something new.</h2><p>Describe it. Add references. Explore the result.</p></div>
+          <JSONEditor value={prompt} onChange={setPrompt} />
+          <ImageUpload onImageUpload={handleImageUpload} uploadedImages={uploadedImages} onClear={index => setUploadedImages(prev => prev.filter((_, i) => i !== index))} />
+          <SettingsPanel settings={settings} onChange={setSettings} apiKey={apiKey} />
+          <div className="generate-section"><button onClick={handleGenerate} disabled={loading || !prompt.trim() || uploadedImages.some(image => !image.preview)} className="generate-button">{loading ? 'Generating…' : 'Generate image'}<span aria-hidden="true">↗</span></button>
+            {loading && <button onClick={() => request.current?.abort()}>Cancel request</button>}
           </div>
-          <div className="api-key-row">
-            <label htmlFor="api-url">API Endpoint (optional):</label>
-            <input
-              id="api-url"
-              type="text"
-              value={apiUrl}
-              onChange={handleApiUrlChange}
-              placeholder="https://openrouter.ai/api/v1/images"
-              className="api-key-input"
-            />
-          </div>
-        </div>
-
-        {currentView === 'generator' ? (
-          <div className="main-content">
-            <div className="left-panel">
-              <ImageUpload
-                onImageUpload={handleImageUpload}
-                uploadedImages={uploadedImages}
-                onClear={handleClearImage}
-              />
-              
-              <JSONEditor
-                value={prompt}
-                onChange={setPrompt}
-              />
-            </div>
-
-            <div className="middle-panel">
-              <SettingsPanel
-                settings={settings}
-                onChange={setSettings}
-              />
-            </div>
-
-            <div className="right-panel">
-              <div className="generate-section">
-                <button
-                  onClick={handleGenerate}
-                  disabled={loading || !prompt.trim()}
-                  className="generate-button"
-                >
-                  {loading ? 'Generating...' : 'Generate Image'}
-                </button>
-              </div>
-
-              {error && (
-                <div className="error-message">
-                  {error}
-                </div>
-              )}
-
-              <ImageDisplay
-                generatedImage={generatedImage}
-                loading={loading}
-                prompt={prompt}
-                onSave={handleSaveImage}
-              />
-            </div>
-          </div>
-        ) : currentView === 'gallery' ? (
-          <div className="gallery-view">
-            <Gallery 
-              onImageSelect={handleGalleryImageSelect}
-              onImport={handleImportImage}
-              onNewPost={handleNewPost}
-              refreshTrigger={galleryCount}
-            />
-          </div>
-        ) : currentView === 'feed' ? (
-          <div className="feed-view">
-            <Feed onUsernameClick={handleUsernameClick} refreshTrigger={postCount} />
-          </div>
-        ) : currentView === 'profile' ? (
-          <div className="profile-view">
-            <Profile 
-              username={profileUsername}
-              onBack={handleBackFromProfile}
-            />
-          </div>
-        ) : currentView === 'video-editor' ? (
-          <div className="video-editor-view">
-            <VideoEditor />
-          </div>
-        ) : null}
-
-        {selectedImageForPost && (
-          <PostModal
-            image={selectedImageForPost}
-            onClose={() => setSelectedImageForPost(null)}
-            onCreatePost={handleCreatePost}
-          />
-        )}
-      </div>
+        </aside>
+        <section className="right-panel" aria-label="Image workspace">
+          <ImageDisplay generatedImage={activeGeneration?.result} loading={loading} generation={activeGeneration} onSave={handleSaveImage}
+            onImport={() => handleImportImage({ id: activeGeneration.id, imageUrl: activeGeneration.result.url })} onRestore={() => restoreGeneration(activeGeneration)} />
+          <GenerationHistory records={history} selectedId={activeGeneration?.id} onSelect={setActiveGeneration} onRestore={restoreGeneration} />
+        </section>
+      </main>}
+      {currentView === 'gallery' && <Gallery onImport={handleImportImage} onNewPost={setSelectedImageForPost} refreshTrigger={libraryVersion} onChange={() => setLibraryVersion(version => version + 1)} />}
+      {currentView === 'feed' && <Feed onUsernameClick={username => { setProfileUsername(username); setCurrentView('profile') }} refreshTrigger={libraryVersion} />}
+      {currentView === 'profile' && <Profile username={profileUsername} onBack={() => navigate('feed')} />}
+      <div hidden={currentView !== 'video-editor'}>{videoVisited && <VideoEditor />}</div>
+      {selectedImageForPost && <PostModal image={selectedImageForPost} onClose={() => setSelectedImageForPost(null)} onCreatePost={handleCreatePost} />}
     </div>
-  )
+    {notice && <div className="toast" role="status">{notice}</div>}
+    {showSettings && <Dialog title="Connection settings" onClose={() => setShowSettings(false)}>
+      <p className="muted">Your key is stored in this browser and sent to the selected endpoint when you generate.</p>
+      <label className="field-label" htmlFor="api-key">OpenRouter API key</label><input id="api-key" type="password" value={apiKey} autoComplete="off" onChange={e => changeCredential('openRouterApiKey', e.target.value, setApiKey)} placeholder="Enter your API key" />
+      <details className="advanced-settings"><summary>Advanced connection</summary><label className="field-label" htmlFor="api-url">API endpoint</label><input id="api-url" type="url" value={apiUrl} onChange={e => changeCredential('openRouterApiUrl', e.target.value, setApiUrl)} placeholder="https://openrouter.ai/api/v1/images" /><p className="muted">Only use an endpoint you trust; it receives your API key and reference images.</p></details>
+      <button className="generate-button" onClick={() => setShowSettings(false)}>Done</button>
+    </Dialog>}
+  </div>
 }
-
 export default App

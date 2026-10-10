@@ -14,7 +14,7 @@
 }
 
 .post-modal {
-  background: white;
+  background: var(--surface);
   border-radius: 12px;
   max-width: 600px;
   width: 100%;
@@ -30,17 +30,17 @@
   justify-content: space-between;
   align-items: center;
   padding: 20px;
-  border-bottom: 1px solid #e0e0e0;
+  border-bottom: 1px solid var(--border);
 }
 
 .post-modal-header h3 {
-  color: #333;
+  color: var(--text);
   font-size: 1.5rem;
   margin: 0;
 }
 
 .post-modal-close {
-  background: #e0e0e0;
+  background: var(--border);
   border: none;
   width: 32px;
   height: 32px;
@@ -52,11 +52,11 @@
   align-items: center;
   justify-content: center;
   transition: background 0.2s;
-  color: #666;
+  color: var(--muted);
 }
 
 .post-modal-close:hover {
-  background: #d0d0d0;
+  background: var(--border);
 }
 
 .post-modal-form {
@@ -69,12 +69,12 @@
 .post-modal-preview {
   width: 100%;
   max-height: 400px;
-  background: #f5f5f5;
+  background: var(--surface);
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  border-bottom: 1px solid #e0e0e0;
+  border-bottom: 1px solid var(--border);
 }
 
 .post-modal-preview img {
@@ -101,14 +101,14 @@
 
 .post-modal-field label {
   font-weight: 600;
-  color: #333;
+  color: var(--text);
   font-size: 14px;
 }
 
 .post-modal-field input,
 .post-modal-field textarea {
   padding: 12px;
-  border: 2px solid #e0e0e0;
+  border: 2px solid var(--border);
   border-radius: 8px;
   font-size: 14px;
   font-family: inherit;
@@ -119,12 +119,12 @@
 .post-modal-field input:focus,
 .post-modal-field textarea:focus {
   outline: none;
-  border-color: #667eea;
+  border-color: var(--accent);
 }
 
 .post-modal-field input:disabled,
 .post-modal-field textarea:disabled {
-  background: #f5f5f5;
+  background: var(--surface);
   cursor: not-allowed;
 }
 
@@ -132,7 +132,7 @@
   display: flex;
   gap: 10px;
   padding: 20px;
-  border-top: 1px solid #e0e0e0;
+  border-top: 1px solid var(--border);
   justify-content: flex-end;
 }
 
@@ -148,22 +148,22 @@
 }
 
 .post-modal-cancel {
-  background: #f5f5f5;
-  color: #666;
+  background: var(--surface);
+  color: var(--muted);
 }
 
 .post-modal-cancel:hover:not(:disabled) {
-  background: #e8e8e8;
+  background: var(--border);
 }
 
 .post-modal-submit {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
+  background: var(--accent);
+  color: var(--on-accent);
 }
 
 .post-modal-submit:hover:not(:disabled) {
   transform: translateY(-2px);
-  box-shadow: 0 6px 12px rgba(102, 126, 234, 0.4);
+  box-shadow: none;
 }
 
 .post-modal-cancel:disabled,

@@ -69,11 +69,11 @@ function ImageUpload({ onImageUpload, uploadedImages, onClear }) {
               <div key={index} className="image-preview-item">
                 <div className="image-preview-label">Image {index + 1}</div>
                 <div className="image-preview-wrapper">
-                  <img
+                  {img.preview ? <img
                     src={img.preview}
                     alt={`Uploaded ${index + 1}`}
                     className="image-preview"
-                  />
+                  /> : <p role="status">Loading reference…</p>}
                   <button
                     onClick={(e) => {
                       e.stopPropagation()

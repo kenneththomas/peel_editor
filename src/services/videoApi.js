@@ -1,5 +1,7 @@
 // Video API service for backend communication
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001'
+let accessToken = ''
+export function setBackendToken(token) { accessToken = token }
 
 // List videos in a folder
 export async function listVideos(folderPath) {
@@ -8,6 +10,7 @@ export async function listVideos(folderPath) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
       },
       body: JSON.stringify({ folderPath }),
     })
@@ -32,6 +35,7 @@ export async function deleteVideo(filePath) {
       method: 'DELETE',
       headers: {
         'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
       },
       body: JSON.stringify({ filePath }),
     })
@@ -56,6 +60,7 @@ export async function stitchVideos(filePaths) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
       },
       body: JSON.stringify({ filePaths }),
     })

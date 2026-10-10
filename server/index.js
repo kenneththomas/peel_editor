@@ -1,330 +1,131 @@
 import express from 'express'
 import cors from 'cors'
-import path from 'path'
-import fs from 'fs/promises'
-import { createReadStream } from 'fs'
-import { fileURLToPath } from 'url'
-import { dirname } from 'path'
-import { exec } from 'child_process'
-import { promisify } from 'util'
-import { tmpdir } from 'os'
-import { randomUUID } from 'crypto'
+import path from 'node:path'
+import fs from 'node:fs/promises'
+import { createReadStream } from 'node:fs'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+import { tmpdir } from 'node:os'
+import { randomUUID, timingSafeEqual } from 'node:crypto'
+import { pathToFileURL } from 'node:url'
+import { resolveAllowedPath } from './fileAccess.js'
 
-const execAsync = promisify(exec)
+const execute = promisify(execFile)
+const extensions = new Set(['.mp4', '.webm', '.ogg', '.mov', '.avi', '.mkv'])
+const types = { '.mp4': 'video/mp4', '.webm': 'video/webm', '.ogg': 'video/ogg', '.mov': 'video/quicktime', '.avi': 'video/x-msvideo', '.mkv': 'video/x-matroska' }
+const fail = (message, status = 400) => Object.assign(new Error(message), { status })
+const route = handler => (req, res, next) => Promise.resolve(handler(req, res)).catch(next)
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = dirname(__filename)
-
-const app = express()
-const PORT = process.env.PORT || 3001
-
-// Middleware
-app.use(cors())
-app.use(express.json())
-
-// Supported video extensions
-const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.ogg', '.mov', '.avi', '.mkv']
-
-// Helper function to check if file is a video
-function isVideoFile(filename) {
-  const ext = path.extname(filename).toLowerCase()
-  return VIDEO_EXTENSIONS.includes(ext)
-}
-
-// Recursively get all video files in a directory
-async function getVideoFiles(dirPath, basePath = '') {
-  const files = []
-  try {
-    const entries = await fs.readdir(dirPath, { withFileTypes: true })
-    
-    for (const entry of entries) {
-      const fullPath = path.join(dirPath, entry.name)
-      const relativePath = path.join(basePath, entry.name)
-      
-      if (entry.isDirectory()) {
-        // Recursively search subdirectories
-        const subFiles = await getVideoFiles(fullPath, relativePath)
-        files.push(...subFiles)
-      } else if (entry.isFile() && isVideoFile(entry.name)) {
-        const stats = await fs.stat(fullPath)
-        files.push({
-          name: entry.name,
-          path: relativePath.replace(/\\/g, '/'), // Normalize path separators
-          fullPath: fullPath,
-          size: stats.size,
-          modified: stats.mtime.toISOString()
-        })
-      }
-    }
-  } catch (error) {
-    console.error(`Error reading directory ${dirPath}:`, error.message)
+export async function createApp({ roots = [], token = '', origins = ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:5173', 'http://127.0.0.1:5173'] } = {}) {
+  const allowedRoots = await Promise.all(roots.map(async root => {
+    if (!path.isAbsolute(root)) throw new Error('PEEL_VIDEO_ROOTS must contain absolute paths')
+    const canonical = await fs.realpath(root)
+    if (!(await fs.stat(canonical)).isDirectory()) throw new Error('Video roots must be directories')
+    return canonical
+  }))
+  const app = express()
+  const files = new Map()
+  app.disable('x-powered-by')
+  app.use((req, res, next) => {
+    if (req.headers.origin && !origins.includes(req.headers.origin)) return res.status(403).json({ error: 'Origin is not allowed' })
+    res.setHeader('Referrer-Policy', 'no-referrer')
+    res.setHeader('Cache-Control', 'no-store')
+    next()
+  })
+  app.use(cors({ origin: origins }))
+  app.use(express.json({ limit: '64kb' }))
+  app.get('/api/health', (req, res) => res.json({ status: 'ok', configured: Boolean(token && allowedRoots.length) }))
+  const authorize = (req, res, next) => {
+    const supplied = Buffer.from(req.headers.authorization || '')
+    const expected = Buffer.from(`Bearer ${token}`)
+    if (!token || supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) return res.status(401).json({ error: 'Enter the backend access token configured with PEEL_API_TOKEN' })
+    next()
   }
-  
-  return files
-}
-
-// Serve video files
-app.get('/api/videos/file', async (req, res) => {
-  try {
-    const { filePath } = req.query
-    
-    if (!filePath) {
-      return res.status(400).json({ error: 'File path is required' })
-    }
-
-    const normalizedPath = path.resolve(filePath)
-    
-    // Security check: ensure file exists and is a video
-    let stats
-    try {
-      stats = await fs.stat(normalizedPath)
-      if (!stats.isFile()) {
-        return res.status(400).json({ error: 'Path is not a file' })
-      }
-      
-      if (!isVideoFile(normalizedPath)) {
-        return res.status(400).json({ error: 'File is not a video' })
-      }
-    } catch (error) {
-      return res.status(404).json({ error: 'File not found' })
-    }
-
-    // Determine content type based on file extension
-    const ext = path.extname(normalizedPath).toLowerCase()
-    const contentTypes = {
-      '.mp4': 'video/mp4',
-      '.webm': 'video/webm',
-      '.ogg': 'video/ogg',
-      '.mov': 'video/quicktime',
-      '.avi': 'video/x-msvideo',
-      '.mkv': 'video/x-matroska'
-    }
-    const contentType = contentTypes[ext] || 'video/mp4'
-
-    // Set appropriate headers for video streaming
-    res.setHeader('Content-Type', contentType)
-    res.setHeader('Accept-Ranges', 'bytes')
-    res.setHeader('Content-Length', stats.size)
-    
-    // Stream the file
-    const fileStream = createReadStream(normalizedPath)
-    fileStream.pipe(res)
-    
-    fileStream.on('error', (error) => {
-      console.error('Error streaming video file:', error)
-      if (!res.headersSent) {
-        res.status(500).json({ error: error.message })
-      }
-    })
-  } catch (error) {
-    console.error('Error serving video file:', error)
-    if (!res.headersSent) {
-      res.status(500).json({ error: error.message })
-    }
+  async function videoPath(input) {
+    const fullPath = await resolveAllowedPath(input, allowedRoots)
+    if (!extensions.has(path.extname(fullPath).toLowerCase()) || !(await fs.stat(fullPath)).isFile()) throw fail('Path is not a supported video')
+    return fullPath
   }
-})
-
-// API Routes
-
-// Get videos from a folder
-app.post('/api/videos/list', async (req, res) => {
-  try {
-    const { folderPath } = req.body
-    
-    if (!folderPath) {
-      return res.status(400).json({ error: 'Folder path is required' })
-    }
-
-    // Security: Ensure the path is absolute and exists
-    const normalizedPath = path.resolve(folderPath)
-    
-    try {
-      const stats = await fs.stat(normalizedPath)
-      if (!stats.isDirectory()) {
-        return res.status(400).json({ error: 'Path is not a directory' })
+  app.post('/api/videos/list', authorize, route(async (req, res) => {
+    const folder = await resolveAllowedPath(req.body.folderPath, allowedRoots)
+    if (!(await fs.stat(folder)).isDirectory()) throw fail('Path is not a directory')
+    const videos = []
+    async function walk(directory) {
+      for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
+        const fullPath = path.join(directory, entry.name)
+        if (entry.isSymbolicLink()) continue
+        if (entry.isDirectory()) await walk(await resolveAllowedPath(fullPath, allowedRoots))
+        else if (entry.isFile() && extensions.has(path.extname(entry.name).toLowerCase())) {
+          const canonical = await videoPath(fullPath)
+          const stats = await fs.stat(canonical)
+          const id = randomUUID()
+          files.set(id, { path: canonical, expires: Date.now() + 86400000 })
+          videos.push({ id, name: entry.name, path: path.relative(folder, canonical).replaceAll('\\', '/'), fullPath: canonical, size: stats.size, modified: stats.mtime.toISOString() })
+        }
       }
-    } catch (error) {
-      return res.status(404).json({ error: 'Directory not found' })
     }
-
-    const videos = await getVideoFiles(normalizedPath)
-    
+    for (const [id, file] of files) if (file.expires < Date.now()) files.delete(id)
+    await walk(folder)
     res.json({ videos })
-  } catch (error) {
-    console.error('Error listing videos:', error)
-    res.status(500).json({ error: error.message })
-  }
-})
-
-// Delete a video file
-app.delete('/api/videos/delete', async (req, res) => {
-  try {
-    const { filePath } = req.body
-    
-    if (!filePath) {
-      return res.status(400).json({ error: 'File path is required' })
+  }))
+  // Native video elements stream through an expiring capability, never a raw path.
+  app.get('/api/videos/file', route(async (req, res) => {
+    const file = files.get(req.query.id)
+    if (!file || file.expires < Date.now()) throw fail('Reload the folder to refresh this video', 404)
+    const fullPath = await videoPath(file.path)
+    const { size } = await fs.stat(fullPath)
+    let start = 0, end = size - 1
+    if (req.headers.range) {
+      const match = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range)
+      if (!match || (!match[1] && !match[2])) return res.status(416).set('Content-Range', `bytes */${size}`).end()
+      if (!match[1]) start = Math.max(0, size - Number(match[2]))
+      else { start = Number(match[1]); if (match[2]) end = Math.min(end, Number(match[2])) }
+      if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start > end || start >= size) return res.status(416).set('Content-Range', `bytes */${size}`).end()
+      res.status(206).set('Content-Range', `bytes ${start}-${end}/${size}`)
     }
-
-    // Security: Ensure the path is absolute and within allowed directories
-    const normalizedPath = path.resolve(filePath)
-    
-    // Check if file exists
+    res.set({ 'Accept-Ranges': 'bytes', 'Content-Type': types[path.extname(fullPath).toLowerCase()], 'Content-Length': size ? end - start + 1 : 0 })
+    if (!size) return res.end()
+    const stream = createReadStream(fullPath, { start, end })
+    res.on('close', () => stream.destroy())
+    stream.on('error', () => res.destroy())
+    stream.pipe(res)
+  }))
+  app.delete('/api/videos/delete', authorize, route(async (req, res) => {
+    const fullPath = await videoPath(req.body.filePath)
+    await fs.unlink(fullPath)
+    for (const [id, file] of files) if (file.path === fullPath) files.delete(id)
+    res.json({ success: true })
+  }))
+  app.post('/api/videos/stitch', authorize, route(async (req, res) => {
+    if (!Array.isArray(req.body.filePaths) || req.body.filePaths.length < 2 || req.body.filePaths.length > 100) throw fail('Select between 2 and 100 videos')
+    const inputs = await Promise.all(req.body.filePaths.map(videoPath))
+    const directory = await fs.mkdtemp(path.join(tmpdir(), 'peel-stitch-'))
+    const list = path.join(directory, 'inputs.txt'), output = path.join(directory, 'output.mp4')
+    const cleanup = () => fs.rm(directory, { recursive: true, force: true }).catch(console.error)
     try {
-      const stats = await fs.stat(normalizedPath)
-      if (!stats.isFile()) {
-        return res.status(400).json({ error: 'Path is not a file' })
-      }
-      
-      if (!isVideoFile(normalizedPath)) {
-        return res.status(400).json({ error: 'File is not a video' })
-      }
-    } catch (error) {
-      return res.status(404).json({ error: 'File not found' })
-    }
-
-    // Delete the file
-    await fs.unlink(normalizedPath)
-    
-    res.json({ success: true, message: 'File deleted successfully' })
-  } catch (error) {
-    console.error('Error deleting video:', error)
-    res.status(500).json({ error: error.message })
-  }
-})
-
-// Stitch videos together
-app.post('/api/videos/stitch', async (req, res) => {
-  try {
-    const { filePaths } = req.body
-    
-    if (!filePaths || !Array.isArray(filePaths) || filePaths.length < 2) {
-      return res.status(400).json({ error: 'At least 2 video file paths are required' })
-    }
-
-    // Validate all file paths exist and are videos
-    const normalizedPaths = []
-    for (const filePath of filePaths) {
-      const normalizedPath = path.resolve(filePath)
-      
-      try {
-        const stats = await fs.stat(normalizedPath)
-        if (!stats.isFile()) {
-          return res.status(400).json({ error: `Path is not a file: ${filePath}` })
-        }
-        
-        if (!isVideoFile(normalizedPath)) {
-          return res.status(400).json({ error: `File is not a video: ${filePath}` })
-        }
-        
-        normalizedPaths.push(normalizedPath)
-      } catch (error) {
-        return res.status(404).json({ error: `File not found: ${filePath}` })
-      }
-    }
-
-    // Create temporary output file
-    const outputFileName = `stitched_${randomUUID()}.mp4`
-    const outputPath = path.join(tmpdir(), outputFileName)
-
-    // Create concat file for FFmpeg
-    const concatFileName = `concat_${randomUUID()}.txt`
-    const concatPath = path.join(tmpdir(), concatFileName)
-    
-    // Write concat file (escape single quotes in paths for FFmpeg)
-    const concatContent = normalizedPaths
-      .map(p => `file '${p.replace(/'/g, "'\\''")}'`)
-      .join('\n')
-    await fs.writeFile(concatPath, concatContent, 'utf8')
-
-    try {
-      // Run FFmpeg to concatenate videos
-      // Using copy mode for speed, but will re-encode if codecs are incompatible
-      const ffmpegCommand = `ffmpeg -f concat -safe 0 -i "${concatPath}" -c copy "${outputPath}"`
-      
-      console.log('Running FFmpeg command:', ffmpegCommand)
-      const { stdout, stderr } = await execAsync(ffmpegCommand)
-      
-      if (stderr && !stderr.includes('Stream #')) {
-        console.warn('FFmpeg stderr:', stderr)
-      }
-
-      // Check if output file was created
-      try {
-        await fs.stat(outputPath)
-      } catch (error) {
-        // If copy mode failed, try with re-encoding
-        console.log('Copy mode failed, trying with re-encoding...')
-        const reencodeCommand = `ffmpeg -f concat -safe 0 -i "${concatPath}" -c:v libx264 -c:a aac -preset fast -crf 23 "${outputPath}"`
-        const { stdout: stdout2, stderr: stderr2 } = await execAsync(reencodeCommand)
-        
-        if (stderr2 && !stderr2.includes('Stream #')) {
-          console.warn('FFmpeg stderr (re-encode):', stderr2)
-        }
-        
-        // Verify output exists
-        await fs.stat(outputPath)
-      }
-
-      // Stream the output file back to client
-      const stats = await fs.stat(outputPath)
-      res.setHeader('Content-Type', 'video/mp4')
-      res.setHeader('Content-Length', stats.size)
-      res.setHeader('Content-Disposition', `attachment; filename="${outputFileName}"`)
-      
-      const fileStream = createReadStream(outputPath)
-      fileStream.pipe(res)
-      
-      // Cleanup after streaming
-      fileStream.on('end', async () => {
-        try {
-          await fs.unlink(outputPath)
-          await fs.unlink(concatPath)
-        } catch (cleanupError) {
-          console.error('Error cleaning up temp files:', cleanupError)
-        }
+      await fs.writeFile(list, inputs.map(input => `file '${input.replaceAll('\\', '/').replaceAll("'", "'\\''")}'`).join('\n'))
+      const args = ['-y', '-f', 'concat', '-safe', '0', '-i', list]
+      try { await execute('ffmpeg', [...args, '-c', 'copy', output], { timeout: 600000 }) }
+      catch { await execute('ffmpeg', [...args, '-c:v', 'libx264', '-c:a', 'aac', '-preset', 'fast', '-crf', '23', output], { timeout: 600000 }) }
+      res.download(output, 'stitched.mp4', async error => {
+        await cleanup()
+        if (error && !res.headersSent) res.status(500).json({ error: 'Unable to download stitched video' })
       })
-      
-      fileStream.on('error', async (error) => {
-        console.error('Error streaming stitched video:', error)
-        try {
-          await fs.unlink(outputPath)
-          await fs.unlink(concatPath)
-        } catch (cleanupError) {
-          console.error('Error cleaning up temp files:', cleanupError)
-        }
-        if (!res.headersSent) {
-          res.status(500).json({ error: error.message })
-        }
-      })
-    } catch (ffmpegError) {
-      // Cleanup on error
-      try {
-        await fs.unlink(concatPath)
-        if (await fs.stat(outputPath).then(() => true).catch(() => false)) {
-          await fs.unlink(outputPath)
-        }
-      } catch (cleanupError) {
-        console.error('Error cleaning up temp files:', cleanupError)
-      }
-      
-      console.error('FFmpeg error:', ffmpegError)
-      return res.status(500).json({ 
-        error: 'Failed to stitch videos. Make sure FFmpeg is installed and accessible.',
-        details: ffmpegError.message 
-      })
+    } catch {
+      await cleanup()
+      throw fail('Stitching failed. Check that FFmpeg is installed and the clips are compatible.', 500)
     }
-  } catch (error) {
-    console.error('Error stitching videos:', error)
-    res.status(500).json({ error: error.message })
-  }
-})
+  }))
+  app.use((error, req, res, next) => {
+    if (res.headersSent) return next(error)
+    res.status(error.status || 500).json({ error: error.status ? error.message : 'Video operation failed' })
+  })
+  return app
+}
 
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() })
-})
-
-// Start server
-app.listen(PORT, () => {
-  console.log(`Backend server running on http://localhost:${PORT}`)
-})
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const roots = (process.env.PEEL_VIDEO_ROOTS || '').split(path.delimiter).filter(Boolean)
+  const origins = process.env.PEEL_UI_ORIGINS?.split(',').filter(Boolean)
+  const app = await createApp({ roots, token: process.env.PEEL_API_TOKEN || '', ...(origins ? { origins } : {}) })
+  app.listen(process.env.PORT || 3001, '127.0.0.1', () => console.log('Peel video backend listening on localhost. Configure PEEL_VIDEO_ROOTS and PEEL_API_TOKEN to enable file access.'))
+}

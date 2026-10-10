@@ -1,237 +1,141 @@
-/**
- * Gallery service for managing saved images
- * Uses IndexedDB for permanent storage with large capacity
- */
-
 const DB_NAME = 'peel_gallery_db'
-const DB_VERSION = 1
-const STORE_NAME = 'images'
+let connection
 
-let db = null
-
-/**
- * Initialize IndexedDB database
- */
-function initDB() {
-  return new Promise((resolve, reject) => {
-    if (db) {
-      resolve(db)
-      return
-    }
-
-    const request = indexedDB.open(DB_NAME, DB_VERSION)
-
-    request.onerror = () => {
-      console.error('IndexedDB error:', request.error)
-      reject(request.error)
-    }
-
-    request.onsuccess = () => {
-      db = request.result
-      resolve(db)
-    }
-
-    request.onupgradeneeded = (event) => {
-      const database = event.target.result
-      
-      // Create object store if it doesn't exist
-      if (!database.objectStoreNames.contains(STORE_NAME)) {
-        const objectStore = database.createObjectStore(STORE_NAME, { keyPath: 'id' })
-        objectStore.createIndex('timestamp', 'timestamp', { unique: false })
+function database() {
+  if (!connection) connection = new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, 2)
+    request.onupgradeneeded = () => {
+      for (const name of ['images', 'generations']) {
+        if (!request.result.objectStoreNames.contains(name)) {
+          const store = request.result.createObjectStore(name, { keyPath: 'id' })
+          store.createIndex('timestamp', 'timestamp')
+        }
       }
     }
+    request.onsuccess = () => {
+      request.result.onversionchange = () => { request.result.close(); connection = null }
+      resolve(request.result)
+    }
+    request.onerror = () => { connection = null; reject(request.error) }
+    request.onblocked = () => { connection = null; reject(new Error('Close other Peel tabs to upgrade the library')) }
+  })
+  return connection
+}
+
+async function transact(name, mode, operation) {
+  const db = await database()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(name, mode)
+    const request = operation(tx.objectStore(name))
+    tx.oncomplete = () => resolve(request?.result)
+    tx.onerror = () => reject(tx.error || request?.error)
+    tx.onabort = () => reject(tx.error || new Error('Storage transaction was interrupted'))
   })
 }
 
-/**
- * Migrate existing localStorage data to IndexedDB (one-time migration)
- */
-async function migrateFromLocalStorage() {
-  try {
-    const localStorageKey = 'peel_gallery'
-    const saved = localStorage.getItem(localStorageKey)
-    
-    if (!saved) {
-      return // Nothing to migrate
-    }
-
-    const images = JSON.parse(saved)
-    if (images.length === 0) {
-      localStorage.removeItem(localStorageKey)
-      return
-    }
-
-    // Check if migration already happened by checking if IndexedDB has data
-    const database = await initDB()
-    const countRequest = database.transaction([STORE_NAME], 'readonly')
-      .objectStore(STORE_NAME)
-      .count()
-
-    const count = await new Promise((resolve, reject) => {
-      countRequest.onsuccess = () => resolve(countRequest.result)
-      countRequest.onerror = () => reject(countRequest.error)
-    })
-
-    // If IndexedDB already has data, don't migrate
-    if (count > 0) {
-      localStorage.removeItem(localStorageKey)
-      return
-    }
-
-    // Migrate images to IndexedDB
-    const transaction = database.transaction([STORE_NAME], 'readwrite')
-    const store = transaction.objectStore(STORE_NAME)
-
-    for (const image of images) {
-      store.add(image)
-    }
-
+let migration
+async function migrate() {
+  if (!migration) migration = (async () => {
+    const saved = localStorage.getItem('peel_gallery')
+    if (!saved) return
+    const records = JSON.parse(saved)
+    if (!Array.isArray(records)) throw new Error('Legacy library is invalid')
+    const db = await database()
     await new Promise((resolve, reject) => {
-      transaction.oncomplete = () => {
-        localStorage.removeItem(localStorageKey)
-        console.log(`Migrated ${images.length} images from localStorage to IndexedDB`)
-        resolve()
+      const tx = db.transaction('images', 'readwrite'), store = tx.objectStore('images')
+      for (const record of records) {
+        const request = store.get(record.id)
+        request.onsuccess = () => { if (!request.result) store.put(record) }
       }
-      transaction.onerror = () => reject(transaction.error)
+      tx.oncomplete = resolve
+      tx.onerror = () => reject(tx.error)
+      tx.onabort = () => reject(tx.error)
     })
-  } catch (error) {
-    console.error('Migration error:', error)
-    // Don't throw - allow app to continue even if migration fails
-  }
+    localStorage.removeItem('peel_gallery')
+  })().catch(error => { migration = null; throw error })
+  return migration
 }
 
-/**
- * Get all saved images from storage
- */
+export function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = () => reject(new Error('Unable to read image'))
+    reader.readAsDataURL(blob)
+  })
+}
+
+async function imageBlob(image) {
+  const url = typeof image === 'string' ? image : image?.url
+  if (!url) throw new Error('No image to save')
+  const response = await fetch(url)
+  if (!response.ok) throw new Error('Unable to download image for local storage')
+  const blob = await response.blob()
+  if (!blob.type.startsWith('image/')) throw new Error('The result is not an image')
+  return blob
+}
+
+async function hydrate(record) {
+  return record.blob ? { ...record, imageUrl: await blobToDataUrl(record.blob) } : record
+}
+
 export async function getSavedImages() {
-  try {
-    await initDB()
-    await migrateFromLocalStorage() // One-time migration
-    
-    const transaction = db.transaction([STORE_NAME], 'readonly')
-    const store = transaction.objectStore(STORE_NAME)
-    const index = store.index('timestamp')
-    
-    const request = index.openCursor(null, 'prev') // Sort by timestamp descending
-    const images = []
-
-    return new Promise((resolve, reject) => {
-      request.onsuccess = (event) => {
-        const cursor = event.target.result
-        if (cursor) {
-          images.push(cursor.value)
-          cursor.continue()
-        } else {
-          resolve(images)
-        }
-      }
-
-      request.onerror = () => {
-        console.error('Error loading gallery:', request.error)
-        reject(request.error)
-      }
-    })
-  } catch (error) {
-    console.error('Error loading gallery:', error)
-    return []
-  }
+  await migrate()
+  const records = await transact('images', 'readonly', store => store.getAll())
+  return Promise.all(records.sort((a, b) => b.timestamp.localeCompare(a.timestamp)).map(hydrate))
 }
 
-/**
- * Save an image to the gallery
- */
-export async function saveImage(imageData, metadata = {}) {
-  try {
-    await initDB()
-    
-    const newImage = {
-      id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
-      imageUrl: typeof imageData === 'string' ? imageData : imageData.url,
-      prompt: metadata.prompt || '',
-      timestamp: new Date().toISOString(),
-      ...metadata
+export async function saveImage(image, metadata = {}) {
+  await migrate()
+  const id = metadata.generationId || crypto.randomUUID()
+  const existing = await transact('images', 'readonly', store => store.get(id))
+  const record = {
+    ...metadata,
+    id,
+    prompt: metadata.prompt || '',
+    timestamp: metadata.timestamp || new Date().toISOString(),
+    title: existing?.title || metadata.title || '',
+    tags: existing?.tags || metadata.tags || [],
+    collection: existing?.collection || metadata.collection || '',
+    favorite: existing?.favorite ?? metadata.favorite ?? false,
+    blob: await imageBlob(image),
+  }
+  await transact('images', 'readwrite', store => store.put(record))
+  return hydrate(record)
+}
+
+export async function updateImage(id, changes) {
+  const allowed = Object.fromEntries(Object.entries(changes).filter(([key]) => ['title', 'tags', 'collection', 'favorite'].includes(key)))
+  const db = await database()
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction('images', 'readwrite'), store = tx.objectStore('images')
+    const request = store.get(id)
+    request.onsuccess = () => {
+      if (!request.result) { tx.abort(); return }
+      store.put({ ...request.result, ...allowed })
     }
-
-    const transaction = db.transaction([STORE_NAME], 'readwrite')
-    const store = transaction.objectStore(STORE_NAME)
-    
-    await new Promise((resolve, reject) => {
-      const request = store.add(newImage)
-      request.onsuccess = () => resolve(newImage)
-      request.onerror = () => {
-        console.error('Error saving image:', request.error)
-        reject(new Error('Failed to save image to gallery'))
-      }
-    })
-
-    return newImage
-  } catch (error) {
-    console.error('Error saving image:', error)
-    throw new Error('Failed to save image to gallery')
-  }
+    tx.oncomplete = resolve
+    tx.onerror = () => reject(tx.error)
+    tx.onabort = () => reject(new Error('Image no longer exists'))
+  })
 }
 
-/**
- * Delete an image from the gallery
- */
-export async function deleteImage(imageId) {
-  try {
-    await initDB()
-    
-    const transaction = db.transaction([STORE_NAME], 'readwrite')
-    const store = transaction.objectStore(STORE_NAME)
-    
-    await new Promise((resolve, reject) => {
-      const request = store.delete(imageId)
-      request.onsuccess = () => resolve(true)
-      request.onerror = () => {
-        console.error('Error deleting image:', request.error)
-        reject(new Error('Failed to delete image from gallery'))
-      }
-    })
-
-    return true
-  } catch (error) {
-    console.error('Error deleting image:', error)
-    throw new Error('Failed to delete image from gallery')
-  }
+export async function deleteImage(id) { await migrate(); return transact('images', 'readwrite', store => store.delete(id)) }
+export async function clearGallery() { await migrate(); return transact('images', 'readwrite', store => store.clear()) }
+export async function restoreImage(record) { return transact('images', 'readwrite', store => store.put(record)) }
+export async function getImageCount() { await migrate(); return transact('images', 'readonly', store => store.count()) }
+export async function saveGeneration(record) { return transact('generations', 'readwrite', store => store.put(record)) }
+export async function completeGeneration(record, image) {
+  const blob = await imageBlob(image)
+  const completed = { ...record, status: 'completed', blob, completedAt: new Date().toISOString() }
+  await saveGeneration(completed)
+  return { ...completed, result: { url: await blobToDataUrl(blob) } }
 }
-
-/**
- * Clear all images from the gallery
- */
-export async function clearGallery() {
-  try {
-    await initDB()
-    
-    const transaction = db.transaction([STORE_NAME], 'readwrite')
-    const store = transaction.objectStore(STORE_NAME)
-    
-    await new Promise((resolve, reject) => {
-      const request = store.clear()
-      request.onsuccess = () => resolve(true)
-      request.onerror = () => {
-        console.error('Error clearing gallery:', request.error)
-        reject(new Error('Failed to clear gallery'))
-      }
-    })
-
-    return true
-  } catch (error) {
-    console.error('Error clearing gallery:', error)
-    throw new Error('Failed to clear gallery')
-  }
-}
-
-/**
- * Get image count
- */
-export async function getImageCount() {
-  try {
-    const images = await getSavedImages()
-    return images.length
-  } catch (error) {
-    console.error('Error getting image count:', error)
-    return 0
-  }
+export async function getGenerations() {
+  const records = await transact('generations', 'readonly', store => store.getAll())
+  return Promise.all(records.sort((a, b) => b.timestamp.localeCompare(a.timestamp)).map(async record => ({
+    ...record,
+    status: record.status === 'pending' ? 'interrupted' : record.status,
+    ...(record.blob ? { result: { url: await blobToDataUrl(record.blob) } } : {}),
+  })))
 }

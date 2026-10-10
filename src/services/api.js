@@ -19,7 +19,7 @@ function getErrorMessage(errorData, response) {
   return apiMessage || `OpenRouter API error: ${response.status} ${response.statusText}`
 }
 
-export async function generateImage(apiKey, prompt, inputImages = null, settings = {}, customApiUrl = null) {
+export async function generateImage(apiKey, prompt, inputImages = null, settings = {}, customApiUrl = null, signal = undefined) {
   const apiUrl = customApiUrl || import.meta.env.VITE_OPENROUTER_API_URL || DEFAULT_ENDPOINT
   const model = settings.model || import.meta.env.VITE_OPENROUTER_MODEL || DEFAULT_MODEL
 
@@ -59,6 +59,7 @@ export async function generateImage(apiKey, prompt, inputImages = null, settings
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(requestBody),
+      signal,
     })
 
     const result = await response.json().catch(() => null)

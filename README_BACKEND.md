@@ -1,57 +1,39 @@
-# Backend Service for Video Editor
+# Local video backend
 
-The backend service enables actual file deletion and folder path-based video loading.
+The backend loads, streams, deletes, and stitches videos from explicitly configured folders. It binds to `127.0.0.1` and denies file access until both a folder allowlist and an access token are configured.
 
-## Setup
+## Start on Windows
 
-1. Install dependencies:
-```bash
-npm install
-```
+In PowerShell, choose the folders that Peel may access and a long random token:
 
-2. Start the backend server:
-```bash
+```powershell
+$env:PEEL_VIDEO_ROOTS = 'C:\Videos;D:\Creative\Clips'
+$env:PEEL_API_TOKEN = [guid]::NewGuid().ToString('N')
+# Copy this token into Peel's Video tab; do not share it.
+$env:PEEL_API_TOKEN
 npm run dev:backend
 ```
 
-Or start both frontend and backend together:
-```bash
-npm run dev:all
-```
+Start the frontend with `npm run dev` in another terminal. In the Video tab, enter the backend token and an absolute folder path inside one of the allowed roots. The token stays in memory and must be entered again after a page reload.
 
-## Usage
+Only configure folders you intend Peel to manage. Video deletion still permanently deletes the original file after the UI confirmation. The library's Undo applies to saved images, not disk video files.
 
-### Backend Mode
+## Configuration
 
-1. Start the backend server (runs on port 3001 by default)
-2. In the Video Editor tab, enter a folder path (e.g., `C:\Videos\MyFolder`)
-3. Click "Load from Backend"
-4. Videos will be loaded and you can delete them (actually deletes from disk)
+- `PEEL_VIDEO_ROOTS`: absolute existing directories separated by `;` on Windows (`:` on Unix). Symlinks and junctions escaping these directories are rejected. Recursive listing skips links.
+- `PEEL_API_TOKEN`: required Bearer token for listing, deleting, and stitching.
+- `PORT`: backend port, default `3001`.
+- `VITE_API_URL`: frontend backend URL, default `http://localhost:3001`.
+- `PEEL_UI_ORIGINS`: optional comma-separated trusted frontend origins. Defaults to localhost and 127.0.0.1 on ports 3000 and 5173. CORS is supplemented with token authorization.
 
-### Browser Mode (Fallback)
+FFmpeg must be installed and available on PATH for stitching. Peel runs it directly without a shell, retries with re-encoding when stream-copy fails, and cleans up temporary output files.
 
-If the backend is not available, you can still use the browser file picker:
-1. Click "Select Folder (Browser)"
-2. Select a folder through the browser dialog
-3. Videos will be loaded, but deletion only removes them from view
+## API
 
-## API Endpoints
+- `GET /api/health`: readiness and configuration status, without credentials or folder paths.
+- `POST /api/videos/list`: authorized request with `{ "folderPath": "C:\\Videos" }`.
+- `GET /api/videos/file?id=…`: expiring, unguessable streaming capability issued by an authorized listing. Supports byte ranges for seeking. Raw file paths are not accepted. Reload the folder after a backend restart or after 24 hours.
+- `DELETE /api/videos/delete`: authorized request with `{ "filePath": "C:\\Videos\\clip.mp4" }`.
+- `POST /api/videos/stitch`: authorized request with `{ "filePaths": ["…", "…"] }` (2–100 clips). All paths are checked against canonical allowed roots.
 
-- `GET /api/health` - Health check
-- `POST /api/videos/list` - List videos in a folder
-  - Body: `{ "folderPath": "C:\\Videos\\MyFolder" }`
-- `GET /api/videos/file?filePath=...` - Stream a video file
-- `DELETE /api/videos/delete` - Delete a video file
-  - Body: `{ "filePath": "C:\\Videos\\MyFolder\\video.mp4" }`
-
-## Environment Variables
-
-- `PORT` - Backend server port (default: 3001)
-- `VITE_API_URL` - Backend API URL (default: http://localhost:3001)
-
-## Security Note
-
-The backend has access to your file system. Only run it in a trusted environment. The server will:
-- Only access files you explicitly specify
-- Only delete video files
-- Validate file paths before operations
+Use `Authorization: Bearer <token>` for authorized requests. Never put the backend token in a URL.

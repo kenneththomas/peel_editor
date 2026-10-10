@@ -3,13 +3,12 @@ import './SettingsPanel.css'
 
 const DEFAULT_MODEL = 'bytedance-seed/seedream-5-0-flash'
 
-function SettingsPanel({ settings, onChange }) {
+function SettingsPanel({ settings, onChange, apiKey }) {
   const [models, setModels] = useState([])
 
   useEffect(() => {
     let cancelled = false
     const headers = {}
-    const apiKey = localStorage.getItem('openRouterApiKey')
     if (apiKey) headers.Authorization = `Bearer ${apiKey}`
 
     fetch('https://openrouter.ai/api/v1/images/models', { headers })
@@ -25,16 +24,16 @@ function SettingsPanel({ settings, onChange }) {
       })
 
     return () => { cancelled = true }
-  }, [])
+  }, [apiKey])
 
   const availableModels = [...models]
   if (!availableModels.some((model) => model.id === (settings.model || DEFAULT_MODEL))) {
-    availableModels.unshift({ id: settings.model || DEFAULT_MODEL, name: 'Seedream 5.0 Flash (default)' })
+    availableModels.unshift({ id: settings.model || DEFAULT_MODEL, name: settings.model === DEFAULT_MODEL ? 'Seedream 5.0 Flash' : (settings.model || DEFAULT_MODEL) })
   }
 
   return (
     <div className="settings-panel">
-      <h2>Generation Settings</h2>
+      <h2>Generation settings</h2>
 
       <div className="settings-group">
         <label htmlFor="image-model">Image model</label>

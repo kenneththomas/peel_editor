@@ -1,71 +1,29 @@
+import { useState, useEffect } from 'react'
 import './ImageDisplay.css'
 
-// Generate a filename with date and short UUID
-function generateFilename() {
-  const date = new Date()
-  const dateStr = date.toISOString().split('T')[0] // YYYY-MM-DD format
-  const shortUuid = crypto.randomUUID().replace(/-/g, '').substring(0, 8) // 8 character UUID
-  return `${dateStr}-${shortUuid}.png`
-}
-
-function ImageDisplay({ generatedImage, loading, prompt, onSave }) {
-  if (loading) {
-    return (
-      <div className="image-display-container">
-        <h2>Generated Image</h2>
-        <div className="loading-spinner">
-          <div className="spinner"></div>
-          <p>Generating your image...</p>
-        </div>
-      </div>
-    )
-  }
-
-  if (!generatedImage) {
-    return (
-      <div className="image-display-container">
-        <h2>Generated Image</h2>
-        <div className="placeholder">
-          <p>Your generated image will appear here</p>
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="image-display-container">
-      <h2>Generated Image</h2>
-      <div className="generated-image-wrapper">
-        {typeof generatedImage === 'string' ? (
-          <img src={generatedImage} alt="Generated" className="generated-image" />
-        ) : generatedImage.url ? (
-          <img src={generatedImage.url} alt="Generated" className="generated-image" />
-        ) : (
-          <div className="image-data">
-            <pre>{JSON.stringify(generatedImage, null, 2)}</pre>
-          </div>
-        )}
-        <div className="image-actions">
-          {onSave && (
-            <button
-              onClick={() => onSave(generatedImage, prompt)}
-              className="save-button"
-            >
-              Save to Gallery
-            </button>
-          )}
-          <a
-            href={typeof generatedImage === 'string' ? generatedImage : generatedImage.url}
-            download={generateFilename()}
-            className="download-button"
-          >
-            Download
-          </a>
-        </div>
-      </div>
+function ImageDisplay({ generatedImage, loading, generation, onSave, onImport, onRestore }) {
+  const [zoom, setZoom] = useState(false)
+  const [elapsed, setElapsed] = useState(0)
+  const [saving, setSaving] = useState(false)
+  useEffect(() => {
+    if (!loading) return
+    setElapsed(0)
+    const timer = setInterval(() => setElapsed(value => value + 1), 1000)
+    return () => clearInterval(timer)
+  }, [loading])
+  const url = typeof generatedImage === 'string' ? generatedImage : generatedImage?.url
+  return <div className="image-display-container">
+    <div className="canvas-heading"><div><span className="eyebrow">WORKSPACE</span><h2>{url ? 'Your creation' : 'A little room for imagination.'}</h2></div>
+      {url && <button onClick={() => setZoom(value => !value)} aria-pressed={zoom}>{zoom ? 'Fit image' : 'Actual size'}</button>}
     </div>
-  )
+    <div className={`image-canvas ${zoom ? 'zoomed' : ''}`} aria-busy={loading}>
+      {url ? <img src={url} alt={generation?.prompt || 'Generated image'} className="generated-image" /> : <div className="canvas-empty"><span aria-hidden="true">◒</span><h3>{generation && generation.status !== 'completed' ? `Generation ${generation.status}` : 'Start with an idea.'}</h3><p>{generation?.error || 'Your image will appear here. Every generation keeps its original inputs.'}</p></div>}
+      {loading && <div className="canvas-progress" role="status"><div className="spinner" /><span>Generating · {elapsed}s</span></div>}
+    </div>
+    {url && <>
+      <div className="canvas-meta"><span>{generation?.settings.model.split('/').pop()}</span><span>Seed: {generation?.settings.seed ?? 'Random'}</span></div>
+      <div className="image-actions"><button disabled={saving} onClick={async () => { setSaving(true); try { await onSave() } finally { setSaving(false) } }} className="save-button">{saving ? 'Saving…' : 'Save to library'}</button><button onClick={onImport}>Use as reference</button><button onClick={onRestore}>Restore inputs</button><a href={url} download={`peel-${generation?.id || 'image'}.png`} className="download-button">Download</a></div>
+    </>}
+  </div>
 }
-
 export default ImageDisplay
-

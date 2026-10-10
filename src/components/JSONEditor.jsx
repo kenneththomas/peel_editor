@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import Editor from '@monaco-editor/react'
+import Dialog from './Dialog'
 import { savePrompt, getSavedPrompts, deletePrompt } from '../services/prompts'
 import './JSONEditor.css'
 
@@ -14,7 +15,7 @@ function JSONEditor({ value, onChange }) {
   const [savedPrompts, setSavedPrompts] = useState([])
 
   useEffect(() => {
-    if (!value || !value.trim()) {
+    if (!value || !value.trim() || !/^[\[{]/.test(value.trim())) {
       setIsValidJSON(true)
       setJsonError(null)
       setParsedJSON(null)
@@ -253,14 +254,14 @@ function JSONEditor({ value, onChange }) {
           )}
           <div className="prompt-actions">
             <button onClick={handleSavePrompt} className="save-prompt-button">
-              💾 Save Prompt
+              Save
             </button>
             <div className="load-prompt-wrapper">
               <button 
                 onClick={() => setShowLoadMenu(!showLoadMenu)} 
                 className="load-prompt-button"
               >
-                📂 Load Prompt
+                Presets
               </button>
               {showLoadMenu && (
                 <div className="prompts-dropdown">
@@ -301,11 +302,11 @@ function JSONEditor({ value, onChange }) {
         </div>
       </div>
       
-      {viewMode === 'editor' ? (
+      {viewMode === 'editor' || !canShowForm ? (
         <div className="editor-wrapper">
           {isJSONLike ? (
             <Editor
-              height="400px"
+              height="280px"
               defaultLanguage="json"
               value={value}
               onChange={handleEditorChange}
@@ -320,19 +321,7 @@ function JSONEditor({ value, onChange }) {
               }}
             />
           ) : (
-            <Editor
-              height="400px"
-              defaultLanguage="plaintext"
-              value={value}
-              onChange={handleEditorChange}
-              theme="vs-dark"
-              options={{
-                minimap: { enabled: false },
-                fontSize: 14,
-                wordWrap: 'on',
-                automaticLayout: true,
-              }}
-            />
+            <textarea className="plain-prompt" aria-label="Image prompt" value={value} onChange={e => onChange(e.target.value)} placeholder="A quiet coastal town at dawn, soft light, shot on film…" />
           )}
         </div>
       ) : (
@@ -360,9 +349,7 @@ function JSONEditor({ value, onChange }) {
 
       {/* Save Prompt Modal */}
       {showSaveModal && (
-        <div className="modal-overlay" onClick={() => setShowSaveModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <h3>Save Prompt</h3>
+        <Dialog title="Save prompt" onClose={() => setShowSaveModal(false)}>
             <input
               type="text"
               className="prompt-name-input"
@@ -386,8 +373,7 @@ function JSONEditor({ value, onChange }) {
                 Cancel
               </button>
             </div>
-          </div>
-        </div>
+        </Dialog>
       )}
     </div>
   )
@@ -437,10 +423,10 @@ function EditableValue({ value, onUpdate }) {
   }
 
   return (
-    <span className="json-value-clickable" onClick={handleClick} title="Click to edit">
+    <button type="button" className="json-value-clickable" onClick={handleClick} title="Click to edit">
       {value}
-      <span className="edit-icon">✏️</span>
-    </span>
+      <span className="edit-icon" aria-hidden="true">✎</span>
+    </button>
   )
 }
 

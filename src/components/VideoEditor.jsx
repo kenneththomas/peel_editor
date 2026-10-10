@@ -7,7 +7,7 @@ import {
   searchVideosByTags,
   removeVideoTags 
 } from '../services/video'
-import { listVideos, deleteVideo, checkHealth, stitchVideos } from '../services/videoApi'
+import { listVideos, deleteVideo, checkHealth, stitchVideos, setBackendToken } from '../services/videoApi'
 import './VideoEditor.css'
 
 // Supported video formats
@@ -34,6 +34,8 @@ function VideoEditor() {
   const [currentPlaylistIndex, setCurrentPlaylistIndex] = useState(0)
   const [useBackend, setUseBackend] = useState(false)
   const [backendAvailable, setBackendAvailable] = useState(false)
+  const [backendToken, setToken] = useState('')
+  const [backendConfigured, setBackendConfigured] = useState(false)
   const [loading, setLoading] = useState(false)
   const [videosDeleted, setVideosDeleted] = useState(0)
   const [spaceFreed, setSpaceFreed] = useState(0)
@@ -57,7 +59,8 @@ function VideoEditor() {
 
   const checkBackendHealth = async () => {
     try {
-      await checkHealth()
+      const health = await checkHealth()
+      setBackendConfigured(health.configured)
       setBackendAvailable(true)
     } catch (error) {
       setBackendAvailable(false)
@@ -133,7 +136,7 @@ function VideoEditor() {
         path: video.path,
         fullPath: video.fullPath,
         size: video.size,
-        url: `${API_BASE_URL}/api/videos/file?filePath=${encodeURIComponent(video.fullPath)}`,
+        url: `${API_BASE_URL}/api/videos/file?id=${encodeURIComponent(video.id)}`,
         file: null // Will need to fetch for stitching
       }))
 
@@ -416,6 +419,9 @@ function VideoEditor() {
         <div className="video-editor-controls">
           {backendAvailable ? (
             <div className="folder-path-input-group">
+              {!backendConfigured && <p>Configure video folders and an access token before loading videos. See README_BACKEND.md.</p>}
+              <input type="password" aria-label="Backend access token" placeholder="Backend access token" value={backendToken}
+                onChange={e => { setToken(e.target.value); setBackendToken(e.target.value) }} autoComplete="off" className="folder-path-input" />
               <input
                 type="text"
                 placeholder="Enter folder path (e.g., C:\\Videos\\MyFolder)"
@@ -431,7 +437,7 @@ function VideoEditor() {
               <button
                 className="folder-load-button"
                 onClick={handleLoadFromBackend}
-                disabled={loading || !folderPath.trim()}
+                disabled={loading || !folderPath.trim() || !backendToken || !backendConfigured}
               >
                 {loading ? 'Loading...' : 'Load Videos'}
               </button>

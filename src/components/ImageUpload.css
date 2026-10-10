@@ -1,5 +1,5 @@
 .image-upload-container {
-  background: white;
+  background: var(--surface);
   padding: 20px;
   border-radius: 12px;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
@@ -7,18 +7,18 @@
 
 .image-upload-container h2 {
   margin-bottom: 15px;
-  color: #333;
+  color: var(--text);
   font-size: 1.5rem;
 }
 
 .dropzone {
-  border: 3px dashed #ccc;
+  border: 3px dashed var(--border);
   border-radius: 12px;
   padding: 40px;
   text-align: center;
   cursor: pointer;
   transition: all 0.3s ease;
-  background: #fafafa;
+  background: var(--surface);
   min-height: 200px;
   display: flex;
   align-items: center;
@@ -26,13 +26,13 @@
 }
 
 .dropzone:hover {
-  border-color: #667eea;
-  background: #f0f0ff;
+  border-color: var(--accent);
+  background: var(--surface);
 }
 
 .dropzone.active {
-  border-color: #667eea;
-  background: #e8e8ff;
+  border-color: var(--accent);
+  background: var(--border);
   transform: scale(1.02);
 }
 
@@ -41,7 +41,7 @@
 }
 
 .dropzone-text {
-  color: #666;
+  color: var(--muted);
   font-size: 16px;
   line-height: 1.6;
 }
@@ -59,7 +59,7 @@
 
 .image-preview-label {
   font-weight: 600;
-  color: #333;
+  color: var(--text);
   margin-bottom: 8px;
   font-size: 14px;
 }
@@ -91,11 +91,11 @@
 .dropzone-text-more {
   margin-top: 10px;
   padding-top: 10px;
-  border-top: 2px dashed #ccc;
+  border-top: 2px dashed var(--border);
 }
 
 .dropzone-text-more p {
-  color: #666;
+  color: var(--muted);
   font-size: 14px;
   margin: 0;
 }
@@ -110,13 +110,13 @@
   border-radius: 6px;
   cursor: pointer;
   font-weight: 600;
-  color: #c33;
+  color: var(--danger);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
   transition: all 0.2s;
 }
 
 .clear-button:hover {
-  background: white;
+  background: var(--surface);
   transform: scale(1.05);
 }
 

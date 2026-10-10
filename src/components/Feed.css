@@ -1,5 +1,5 @@
 .feed-container {
-  background: white;
+  background: var(--surface);
   padding: 20px;
   border-radius: 12px;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
@@ -12,11 +12,11 @@
 .feed-header {
   margin-bottom: 20px;
   padding-bottom: 15px;
-  border-bottom: 1px solid #e0e0e0;
+  border-bottom: 1px solid var(--border);
 }
 
 .feed-header h2 {
-  color: #333;
+  color: var(--text);
   font-size: 1.5rem;
   margin: 0;
 }
@@ -24,24 +24,24 @@
 .feed-upload-section {
   margin-bottom: 30px;
   padding: 20px;
-  background: #fafafa;
+  background: var(--surface);
   border-radius: 8px;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--border);
 }
 
 .feed-upload-dropzone {
-  border: 2px dashed #ccc;
+  border: 2px dashed var(--border);
   border-radius: 8px;
   padding: 40px;
   text-align: center;
   cursor: pointer;
   transition: all 0.3s ease;
-  background: white;
+  background: var(--surface);
 }
 
 .feed-upload-dropzone:hover {
-  border-color: #667eea;
-  background: #f0f0ff;
+  border-color: var(--accent);
+  background: var(--surface);
 }
 
 .feed-upload-dropzone-content {
@@ -49,24 +49,24 @@
   flex-direction: column;
   align-items: center;
   gap: 12px;
-  color: #666;
+  color: var(--muted);
 }
 
 .feed-upload-dropzone-content svg {
-  color: #999;
+  color: var(--muted);
 }
 
 .feed-upload-text {
   font-size: 16px;
   font-weight: 500;
   margin: 0;
-  color: #333;
+  color: var(--text);
 }
 
 .feed-upload-hint {
   font-size: 14px;
   margin: 0;
-  color: #999;
+  color: var(--muted);
   font-size: 13px;
 }
 
@@ -84,7 +84,7 @@
   position: relative;
   width: 100%;
   max-height: 400px;
-  background: #f5f5f5;
+  background: var(--surface);
   border-radius: 8px;
   overflow: hidden;
   display: flex;
@@ -114,13 +114,13 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #c33;
+  color: var(--danger);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
   transition: all 0.2s;
 }
 
 .feed-upload-remove:hover {
-  background: white;
+  background: var(--surface);
   transform: scale(1.1);
 }
 
@@ -138,31 +138,31 @@
 
 .feed-upload-field label {
   font-weight: 600;
-  color: #333;
+  color: var(--text);
   font-size: 14px;
 }
 
 .feed-upload-field input,
 .feed-upload-field textarea {
   padding: 12px;
-  border: 2px solid #e0e0e0;
+  border: 2px solid var(--border);
   border-radius: 8px;
   font-size: 14px;
   font-family: inherit;
   transition: border-color 0.3s;
   resize: vertical;
-  background: white;
+  background: var(--surface);
 }
 
 .feed-upload-field input:focus,
 .feed-upload-field textarea:focus {
   outline: none;
-  border-color: #667eea;
+  border-color: var(--accent);
 }
 
 .feed-upload-field input:disabled,
 .feed-upload-field textarea:disabled {
-  background: #f5f5f5;
+  background: var(--surface);
   cursor: not-allowed;
 }
 
@@ -184,22 +184,22 @@
 }
 
 .feed-upload-cancel {
-  background: #f5f5f5;
-  color: #666;
+  background: var(--surface);
+  color: var(--muted);
 }
 
 .feed-upload-cancel:hover:not(:disabled) {
-  background: #e8e8e8;
+  background: var(--border);
 }
 
 .feed-upload-submit {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
+  background: var(--accent);
+  color: var(--on-accent);
 }
 
 .feed-upload-submit:hover:not(:disabled) {
   transform: translateY(-2px);
-  box-shadow: 0 6px 12px rgba(102, 126, 234, 0.4);
+  box-shadow: none;
 }
 
 .feed-upload-cancel:disabled,
@@ -216,7 +216,7 @@
   align-items: center;
   justify-content: center;
   min-height: 300px;
-  color: #999;
+  color: var(--muted);
 }
 
 .feed-empty-hint {
@@ -235,9 +235,9 @@
 }
 
 .feed-post {
-  border: 1px solid #dbdbdb;
+  border: 1px solid var(--accent);
   border-radius: 4px;
-  background: white;
+  background: var(--surface);
   overflow: hidden;
 }
 
@@ -246,7 +246,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 14px 16px;
-  border-bottom: 1px solid #efefef;
+  border-bottom: 1px solid var(--accent);
 }
 
 .feed-post-user-info {
@@ -260,7 +260,7 @@
   height: 32px;
   border-radius: 50%;
   object-fit: cover;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--border);
   flex-shrink: 0;
 }
 
@@ -268,14 +268,14 @@
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: var(--accent);
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--border);
   font-size: 14px;
   font-weight: 600;
-  color: white;
+  color: var(--on-accent);
   flex-shrink: 0;
 }
 
@@ -284,7 +284,7 @@
   border: none;
   font-weight: 600;
   font-size: 14px;
-  color: #262626;
+  color: var(--accent);
   cursor: pointer;
   padding: 0;
   transition: opacity 0.2s;
@@ -296,13 +296,13 @@
 
 .feed-post-time {
   font-size: 12px;
-  color: #8e8e8e;
+  color: var(--accent);
   text-transform: uppercase;
 }
 
 .feed-post-image-wrapper {
   width: 100%;
-  background: #000;
+  background: var(--background);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -327,7 +327,7 @@
   align-items: center;
   gap: 16px;
   padding: 12px 16px;
-  border-bottom: 1px solid #efefef;
+  border-bottom: 1px solid var(--accent);
 }
 
 .feed-action-button {
@@ -350,25 +350,25 @@
 }
 
 .feed-like-button {
-  color: #262626;
+  color: var(--accent);
 }
 
 .feed-share-button {
-  color: #262626;
+  color: var(--accent);
   transform: scaleX(-1);
 }
 
 .feed-post-likes {
   padding: 0 16px 8px;
   font-size: 14px;
-  color: #262626;
+  color: var(--accent);
   font-weight: 600;
 }
 
 .feed-post-caption {
   padding: 0 16px 16px;
   font-size: 14px;
-  color: #262626;
+  color: var(--accent);
   line-height: 1.5;
   word-wrap: break-word;
   display: flex;
@@ -388,7 +388,7 @@
   height: 24px;
   border-radius: 50%;
   object-fit: cover;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--border);
   flex-shrink: 0;
 }
 
@@ -396,14 +396,14 @@
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: var(--accent);
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--border);
   font-size: 12px;
   font-weight: 600;
-  color: white;
+  color: var(--on-accent);
   flex-shrink: 0;
 }
 
@@ -412,7 +412,7 @@
   border: none;
   font-weight: 600;
   font-size: 14px;
-  color: #262626;
+  color: var(--accent);
   cursor: pointer;
   padding: 0;
   margin-right: 8px;
