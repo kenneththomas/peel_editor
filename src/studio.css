@@ -85,3 +85,14 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: .75; }
 .app button.danger-button { background: var(--danger-surface); color: var(--danger); }
 @media (max-width: 1000px) { .image-actions { gap: 6px; }.image-actions button, .image-actions a { font-size: 11px; } }
 @media (max-width: 760px) { .image-canvas { min-height: 320px; height: 55vh; }.canvas-heading h2 { font-size: 18px; }.library .gallery-grid { grid-template-columns: repeat(auto-fill, minmax(145px, 1fr)); gap: 10px; }.library-filters select { flex: 1; }.studio-dialog { padding: 18px; }.json-editor-container, .image-upload-container, .settings-panel, .image-display-container, .gallery-container { padding: 16px; } }
+
+.generation-count { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; margin-bottom: 10px; }
+.generation-count select { width: 70px; padding: 8px; }
+.generation-carousel { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+.generation-carousel > span { font-size: 12px; color: var(--muted); }
+.generation-thumbnails { display: flex; gap: 8px; }
+.generation-thumbnails button { width: 64px; height: 64px; padding: 3px; overflow: hidden; border: 2px solid var(--border); }
+.generation-thumbnails button.selected { border-color: var(--accent); }
+.generation-thumbnails img { width: 100%; height: 100%; object-fit: cover; border-radius: 4px; }
+.generation-thumbnails small { display: block; font-size: 9px; }
+.image-actions { margin-top: 12px; }

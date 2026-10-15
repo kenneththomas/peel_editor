@@ -12,7 +12,7 @@ import Dialog from './components/Dialog'
 import GenerationHistory from './components/GenerationHistory'
 import { generateImage } from './services/api'
 import { saveImage, getImageCount, getGenerations, saveGeneration, completeGeneration } from './services/gallery'
-import { createGeneration, parsePrompt } from './services/generation'
+import { createGeneration, parsePrompt, createGenerationBatch, generationGroup, MAX_GENERATIONS } from './services/generation'
 import { createPost, getPostCount } from './services/feed'
 import './App.css'
 import './studio.css'
@@ -35,7 +35,9 @@ function App() {
   const [prompt, setPrompt] = useState('')
   const [activeGeneration, setActiveGeneration] = useState(null)
   const [history, setHistory] = useState([])
-  const [loading, setLoading] = useState(false)
+  const [pendingCount, setPendingCount] = useState(0)
+  const [generationCount, setGenerationCount] = useState(1)
+  const loading = pendingCount > 0
   const [error, setError] = useState(null)
   const [notice, setNotice] = useState('')
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('openRouterApiKey') || '')
@@ -46,8 +48,9 @@ function App() {
   const [postCount, setPostCount] = useState(0)
   const [libraryVersion, setLibraryVersion] = useState(0)
   const [selectedImageForPost, setSelectedImageForPost] = useState(null)
-  const request = useRef(null)
-  const busy = useRef(false)
+  const requests = useRef(new Map())
+  const historyRef = useRef([])
+  const activeGroup = generationGroup(history, activeGeneration)
 
   useEffect(() => {
     if (currentView === 'video-editor') setVideoVisited(true)
@@ -55,8 +58,11 @@ function App() {
   useEffect(() => {
     const change = () => { setCurrentView(readView()); setProfileUsername(null) }
     window.addEventListener('hashchange', change)
-    getGenerations().then(setHistory).catch(err => setError(`History could not load: ${err.message}`))
-    return () => { window.removeEventListener('hashchange', change); request.current?.abort() }
+    getGenerations().then(records => {
+      const merged = [...historyRef.current, ...records.filter(record => !historyRef.current.some(item => item.id === record.id))]
+      historyRef.current = merged; setHistory(merged)
+    }).catch(err => setError(`History could not load: ${err.message}`))
+    return () => { window.removeEventListener('hashchange', change); requests.current.forEach(controller => controller.abort()) }
   }, [])
   useEffect(() => {
     try { localStorage.setItem('settings', JSON.stringify(settings)) }
@@ -73,7 +79,11 @@ function App() {
   }, [notice])
 
   function navigate(view) { setProfileUsername(null); setCurrentView(view); location.hash = view }
-  function recordHistory(record) { setHistory(prev => [record, ...prev.filter(item => item.id !== record.id)]) }
+  function recordHistory(record) {
+    historyRef.current = [record, ...historyRef.current.filter(item => item.id !== record.id)]
+    setHistory(historyRef.current)
+    setActiveGeneration(selected => selected?.id === record.id ? record : selected)
+  }
   const handleImageUpload = (file, index) => {
     const id = crypto.randomUUID()
     setUploadedImages(prev => {
@@ -86,30 +96,21 @@ function App() {
     reader.onerror = () => { setUploadedImages(prev => prev.filter(image => image.id !== id)); setError('Unable to read reference image') }
     reader.readAsDataURL(file)
   }
-  const handleGenerate = async () => {
-    if (busy.current) return
-    if (!apiKey) { setShowSettings(true); setError('Add an OpenRouter API key to generate images.'); return }
-    if (!prompt.trim()) return
-    if (uploadedImages.some(image => !image.preview)) { setError('Wait for reference images to finish loading.'); return }
-    let parsed
-    try { parsed = parsePrompt(prompt) } catch { setError('Correct the JSON prompt before generating.'); return }
-    const record = createGeneration(prompt, settings, uploadedImages)
-    busy.current = true
-    setLoading(true); setError(null)
-    request.current = new AbortController()
+  const runGeneration = async (record, controller, connection) => {
     try {
       await saveGeneration(record)
-      recordHistory(record)
-      const result = await generateImage(apiKey, parsed, uploadedImages.map(image => image.file), record.settings, apiUrl, request.current.signal)
-      // Keep the result usable even if local storage is full or a remote image blocks downloading.
+      const references = await Promise.all(record.references.map(async image => {
+        const response = await fetch(image.preview, { signal: controller.signal })
+        if (!response.ok) throw new Error('Reference image could not be loaded')
+        return new File([await response.blob()], image.name, { type: image.type })
+      }))
+      const result = await generateImage(connection.key, parsePrompt(record.prompt), references, record.settings, connection.url, controller.signal)
       const completed = { ...record, status: 'completed', result }
-      setActiveGeneration(completed)
       recordHistory(completed)
       try {
-        const persisted = await completeGeneration(record, result)
-        setActiveGeneration(persisted); recordHistory(persisted)
+        recordHistory(await completeGeneration(record, result))
       } catch (err) {
-        await saveGeneration({ ...record, status: 'completed', result }).catch(() => {})
+        await saveGeneration(completed).catch(() => {})
         setError(`Image generated, but its local copy could not be saved: ${err.message}. Download it now.`)
       }
     } catch (err) {
@@ -117,7 +118,38 @@ function App() {
       recordHistory(failed)
       await saveGeneration(failed).catch(() => {})
       if (err.name !== 'AbortError') setError(err.message || 'Failed to generate image')
-    } finally { busy.current = false; setLoading(false); request.current = null }
+    } finally {
+      requests.current.delete(record.id)
+      setPendingCount(requests.current.size)
+    }
+  }
+  const handleGenerate = (additional = false) => {
+    if (!apiKey) { setShowSettings(true); setError('Add an OpenRouter API key to generate images.'); return }
+    let source, records
+    try {
+      if (additional) {
+        if (!activeGeneration) return
+        source = activeGeneration
+      } else {
+        if (requests.current.size || !prompt.trim()) return
+        if (uploadedImages.some(image => !image.preview)) { setError('Wait for reference images to finish loading.'); return }
+        parsePrompt(prompt)
+        source = createGeneration(prompt, settings, uploadedImages)
+      }
+      const count = additional ? 1 : generationCount
+      if (requests.current.size + count > MAX_GENERATIONS) return
+      records = createGenerationBatch(source, count, additional ? generationGroup(historyRef.current, source) : [])
+    } catch (err) { setError(err instanceof SyntaxError ? 'Correct the JSON prompt before generating.' : err.message); return }
+    setError(null)
+    // Reserve every slot before starting asynchronous work or accepting another click.
+    for (const record of records) {
+      requests.current.set(record.id, new AbortController())
+      recordHistory(record)
+    }
+    setPendingCount(requests.current.size)
+    if (!additional) setActiveGeneration(records[0])
+    const connection = { key: apiKey, url: apiUrl }
+    for (const record of records) void runGeneration(record, requests.current.get(record.id), connection)
   }
   const handleSaveImage = async () => {
     if (!activeGeneration?.result) return
@@ -172,15 +204,16 @@ function App() {
       {currentView === 'generator' && <main className="main-content">
         <aside className="left-panel">
           <div className="workspace-heading"><span className="eyebrow">YOUR NEXT IDEA</span><h2>Make something new.</h2><p>Describe it. Add references. Explore the result.</p></div>
+          <div className="generate-section"><label className="generation-count" htmlFor="generation-count">Generations<select id="generation-count" value={generationCount} onChange={event => setGenerationCount(Number(event.target.value))}>{[1, 2, 3, 4].map(count => <option key={count} value={count}>{count}</option>)}</select></label><button onClick={() => handleGenerate()} disabled={loading || !prompt.trim() || uploadedImages.some(image => !image.preview)} className="generate-button">{loading ? `Generating ${pendingCount}…` : generationCount === 1 ? 'Generate image' : `Generate ${generationCount} images`}<span aria-hidden="true">↗</span></button>
+            {loading && <button onClick={() => requests.current.forEach(controller => controller.abort())}>Cancel all requests</button>}
+          </div>
           <JSONEditor value={prompt} onChange={setPrompt} />
           <ImageUpload onImageUpload={handleImageUpload} uploadedImages={uploadedImages} onClear={index => setUploadedImages(prev => prev.filter((_, i) => i !== index))} />
           <SettingsPanel settings={settings} onChange={setSettings} apiKey={apiKey} />
-          <div className="generate-section"><button onClick={handleGenerate} disabled={loading || !prompt.trim() || uploadedImages.some(image => !image.preview)} className="generate-button">{loading ? 'Generating…' : 'Generate image'}<span aria-hidden="true">↗</span></button>
-            {loading && <button onClick={() => request.current?.abort()}>Cancel request</button>}
-          </div>
         </aside>
         <section className="right-panel" aria-label="Image workspace">
-          <ImageDisplay generatedImage={activeGeneration?.result} loading={loading} generation={activeGeneration} onSave={handleSaveImage}
+          <ImageDisplay generatedImage={activeGeneration?.result} loading={activeGeneration?.status === 'pending'} generation={activeGeneration} onSave={handleSaveImage}
+            generations={activeGroup} onSelect={setActiveGeneration} onGenerateAdditional={() => handleGenerate(true)} canGenerateAdditional={activeGroup.length < MAX_GENERATIONS && pendingCount < MAX_GENERATIONS}
             onImport={() => handleImportImage({ id: activeGeneration.id, imageUrl: activeGeneration.result.url })} onRestore={() => restoreGeneration(activeGeneration)} />
           <GenerationHistory records={history} selectedId={activeGeneration?.id} onSelect={setActiveGeneration} onRestore={restoreGeneration} />
         </section>
